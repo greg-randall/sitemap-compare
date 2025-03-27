@@ -18,10 +18,14 @@ parser.add_argument('--sitemap-url', help='The URL of the sitemap (optional, wil
 parser.add_argument('--output-prefix', default='comparison_results', help='Prefix for output files')
 args = parser.parse_args()
 
+# Global flag to track interruption
+interrupted = False
+
 # Define signal handler for graceful exit
 def signal_handler(sig, frame):
+    global interrupted
     logging.info("Ctrl+C detected. Shutting down gracefully...")
-    sys.exit(0)
+    interrupted = True
 
 # Register the signal handler
 signal.signal(signal.SIGINT, signal_handler)
@@ -138,6 +142,7 @@ def normalize_url(url):
 
 def spider_website(start_url, max_pages=10000):
     """Spider a website and return all discovered URLs."""
+    global interrupted
     base_domain = urlparse(start_url).netloc
     visited_urls = set()
     to_visit = {start_url}
@@ -146,7 +151,7 @@ def spider_website(start_url, max_pages=10000):
     logging.info(f"Starting to spider {start_url}")
     
     try:
-        while to_visit and len(visited_urls) < max_pages:
+        while to_visit and len(visited_urls) < max_pages and not interrupted:
             current_url = to_visit.pop()
             
             if current_url in visited_urls:
@@ -184,13 +189,17 @@ def spider_website(start_url, max_pages=10000):
                         
             except Exception as e:
                 logging.error(f"Error visiting {current_url}: {e}")
-    except KeyboardInterrupt:
+    except Exception as e:
+        logging.error(f"Spidering error: {e}")
+        
+    if interrupted:
         logging.info("Spidering interrupted. Returning URLs found so far...")
     
     logging.info(f"Spidering complete. Found {len(found_urls)} URLs")
     return found_urls
 
 def main():
+    global interrupted
     try:
         # Get sitemap URL (discover if not provided)
         sitemap_url = args.sitemap_url
@@ -206,6 +215,11 @@ def main():
         # Get URLs from spidering
         site_urls = spider_website(args.start_url)
         
+        # Check if we were interrupted
+        if interrupted:
+            logging.info("Process was interrupted. Exiting...")
+            sys.exit(0)
+            
         # Find differences
         in_site_not_sitemap = site_urls - sitemap_urls
         in_sitemap_not_site = sitemap_urls - site_urls
@@ -224,9 +238,13 @@ def main():
         logging.info(f"Wrote {len(in_sitemap_not_site)} URLs missing from site to {missing_from_site_file}")
         
         logging.info("Comparison complete!")
-    except KeyboardInterrupt:
-        logging.info("Process interrupted by user. Exiting...")
-        sys.exit(0)
+    except Exception as e:
+        logging.error(f"Error in main process: {e}")
+        sys.exit(1)
+    finally:
+        if interrupted:
+            logging.info("Process interrupted by user. Exiting...")
+            sys.exit(0)
 
 if __name__ == "__main__":
     main()
