@@ -472,7 +472,7 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None, v
     last_update_time = time.time()
     
     def process_url():
-        nonlocal visited_count, last_update_time
+        nonlocal visited_count, last_update_time, estimated_total
         while not interrupted and visited_count < max_pages:
             try:
                 # Get URL with timeout to allow for interruption
