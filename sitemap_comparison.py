@@ -55,32 +55,63 @@ def discover_sitemap_url(base_url):
         f"{base_domain}/sitemap.txt",
     ]
     
+    # Retry delays for exponential backoff
+    retry_delays = [1, 2, 4, 8, 16, 32]
+    
     # Check robots.txt first (most reliable method)
-    try:
-        robots_url = f"{base_domain}/robots.txt"
-        logging.info(f"Checking robots.txt at {robots_url}")
-        response = requests.get(robots_url, timeout=10)
-        
-        if response.status_code == 200:
-            # Look for Sitemap: directive in robots.txt
-            for line in response.text.splitlines():
-                if line.lower().startswith('sitemap:'):
-                    sitemap_url = line.split(':', 1)[1].strip()
-                    logging.info(f"Found sitemap in robots.txt: {sitemap_url}")
-                    return sitemap_url
-    except Exception as e:
-        logging.warning(f"Error checking robots.txt: {e}")
+    robots_url = f"{base_domain}/robots.txt"
+    logging.info(f"Checking robots.txt at {robots_url}")
+    
+    for retry, delay in enumerate(retry_delays):
+        try:
+            response = requests.get(robots_url, timeout=10)
+            
+            if response.status_code == 200:
+                # Look for Sitemap: directive in robots.txt
+                for line in response.text.splitlines():
+                    if line.lower().startswith('sitemap:'):
+                        sitemap_url = line.split(':', 1)[1].strip()
+                        logging.info(f"Found sitemap in robots.txt: {sitemap_url}")
+                        return sitemap_url
+            # If we get here with a 200 status but no sitemap, break the retry loop
+            break
+        except Exception as e:
+            error_message = str(e).lower()
+            if any(err in error_message for err in [
+                'connection reset', 'connection timed out', 'timeout', 
+                'recv failure', 'operation timed out'
+            ]):
+                if retry < len(retry_delays) - 1:
+                    logging.warning(f"Connection error checking robots.txt, retrying in {delay}s (attempt {retry+1}/{len(retry_delays)}): {e}")
+                    time.sleep(delay)
+                    continue
+            logging.warning(f"Error checking robots.txt: {e}")
+            break
     
     # Try common locations
     for url in potential_locations:
-        try:
-            logging.info(f"Checking potential sitemap at {url}")
-            response = requests.get(url, timeout=10)
-            if response.status_code == 200 and ('<urlset' in response.text or '<sitemapindex' in response.text):
-                logging.info(f"Found sitemap at {url}")
-                return url
-        except Exception as e:
-            logging.warning(f"Error checking {url}: {e}")
+        logging.info(f"Checking potential sitemap at {url}")
+        
+        for retry, delay in enumerate(retry_delays):
+            try:
+                response = requests.get(url, timeout=10)
+                if response.status_code == 200 and ('<urlset' in response.text or '<sitemapindex' in response.text):
+                    logging.info(f"Found sitemap at {url}")
+                    return url
+                # If we get here with a 200 status but no valid sitemap, break the retry loop
+                break
+            except Exception as e:
+                error_message = str(e).lower()
+                if any(err in error_message for err in [
+                    'connection reset', 'connection timed out', 'timeout', 
+                    'recv failure', 'operation timed out'
+                ]):
+                    if retry < len(retry_delays) - 1:
+                        logging.warning(f"Connection error checking {url}, retrying in {delay}s (attempt {retry+1}/{len(retry_delays)}): {e}")
+                        time.sleep(delay)
+                        continue
+                logging.warning(f"Error checking {url}: {e}")
+                break
     
     logging.error("Could not automatically discover sitemap")
     return None
