@@ -7,6 +7,7 @@ import xml.etree.ElementTree as ET
 from curl_cffi import requests
 from bs4 import BeautifulSoup
 import logging
+import html
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -76,6 +77,36 @@ def discover_sitemap_url(base_url):
     logging.error("Could not automatically discover sitemap")
     return None
 
+def extract_urls_with_regex(content, base_url):
+    """Extract URLs using regex as a fallback method."""
+    urls = set()
+    # Match both absolute URLs and relative URLs
+    url_pattern = re.compile(r'href=[\'"]?([^\'" >]+)[\'"]?')
+    matches = url_pattern.findall(content)
+    
+    parsed_base = urlparse(base_url)
+    base_domain = f"{parsed_base.scheme}://{parsed_base.netloc}"
+    
+    for match in matches:
+        # Skip anchors, javascript, mailto links
+        if match.startswith(('#', 'javascript:', 'mailto:')):
+            continue
+            
+        # Convert relative URLs to absolute
+        if not match.startswith(('http://', 'https://')):
+            if match.startswith('/'):
+                match = f"{base_domain}{match}"
+            else:
+                match = urljoin(base_url, match)
+                
+        # Only include URLs from the same domain
+        parsed_url = urlparse(match)
+        if parsed_url.netloc == parsed_base.netloc:
+            urls.add(match)
+            
+    logging.info(f"Regex extraction found {len(urls)} URLs")
+    return urls
+
 def get_sitemap_urls(sitemap_url):
     """Extract all URLs from a sitemap, handling different formats and recursion."""
     logging.info(f"Fetching sitemap from {sitemap_url}")
@@ -86,7 +117,7 @@ def get_sitemap_urls(sitemap_url):
         response.raise_for_status()
         content = response.text
         
-        # Check if it's an XML sitemap
+        # First try XML parsing for standard sitemaps
         if content.strip().startswith('<?xml') or '<urlset' in content or '<sitemapindex' in content:
             try:
                 # Handle XML sitemaps
@@ -114,56 +145,68 @@ def get_sitemap_urls(sitemap_url):
                     
                     for url_element in url_elements:
                         urls.add(url_element.text.strip())
+                        
+                if urls:
+                    logging.info(f"Successfully parsed XML sitemap, found {len(urls)} URLs")
+                    return urls
             except ET.ParseError as e:
                 logging.error(f"XML parsing error in sitemap {sitemap_url}: {e}")
-                # Try to parse as HTML with BeautifulSoup if XML parsing fails
-                logging.info(f"Attempting to parse {sitemap_url} as HTML sitemap")
-                soup = BeautifulSoup(content, 'html.parser')
+        
+        # If XML parsing failed or it's not an XML sitemap, try HTML parsing
+        logging.info(f"Attempting to parse {sitemap_url} as HTML sitemap")
+        
+        # Try BeautifulSoup parsing
+        try:
+            soup = BeautifulSoup(content, 'html.parser')
+            
+            # Look for links in the page
+            for a_tag in soup.find_all('a', href=True):
+                href = a_tag['href']
                 
-                # Look for links in the page
-                sitemap_links = []
-                for a_tag in soup.find_all('a', href=True):
-                    href = a_tag['href']
-                    if href.startswith(('http://', 'https://')):
-                        if 'sitemap' in href.lower() and href.endswith(('.xml', '.xml.gz')):
-                            sitemap_links.append(href)
-                        else:
-                            urls.add(href)
+                # Handle relative URLs
+                if not href.startswith(('http://', 'https://')):
+                    href = urljoin(sitemap_url, href)
                 
-                # If we found sitemap links, process them recursively
-                if sitemap_links:
-                    logging.info(f"Found {len(sitemap_links)} sitemap links in HTML sitemap")
-                    for sub_sitemap_url in sitemap_links:
-                        sub_urls = get_sitemap_urls(sub_sitemap_url)
-                        urls.update(sub_urls)
+                # Check if it's a sitemap link
+                if 'sitemap' in href.lower() and href.endswith(('.xml', '.xml.gz')):
+                    logging.info(f"Found sitemap link in HTML: {href}")
+                    sub_urls = get_sitemap_urls(href)
+                    urls.update(sub_urls)
+                else:
+                    # Parse the URL to check if it's from the same domain
+                    parsed_href = urlparse(href)
+                    parsed_sitemap = urlparse(sitemap_url)
+                    
+                    if parsed_href.netloc == parsed_sitemap.netloc:
+                        urls.add(href)
+        except Exception as e:
+            logging.error(f"BeautifulSoup parsing error: {e}")
         
         # Check if it's a text sitemap (one URL per line)
-        elif all(line.startswith(('http://', 'https://')) for line in content.splitlines() if line.strip()):
+        if not urls and all(line.startswith(('http://', 'https://')) for line in content.splitlines() if line.strip()):
             for line in content.splitlines():
                 line = line.strip()
                 if line and line.startswith(('http://', 'https://')):
                     urls.add(line)
         
-        # If no URLs found yet, try to extract URLs from HTML content
+        # If still no URLs found, use regex as a last resort
         if not urls:
-            logging.info(f"Attempting to extract URLs from HTML content in {sitemap_url}")
-            soup = BeautifulSoup(content, 'html.parser')
-            
-            # Extract URLs from any HTML table that might contain sitemap data
-            for a_tag in soup.find_all('a', href=True):
-                href = a_tag['href']
-                if href.startswith(('http://', 'https://')):
-                    if 'sitemap' in href.lower() and href.endswith(('.xml', '.xml.gz')):
-                        logging.info(f"Found sitemap link in HTML: {href}")
-                        sub_urls = get_sitemap_urls(href)
-                        urls.update(sub_urls)
-                    else:
-                        urls.add(href)
+            logging.info("No URLs found with standard methods, trying regex extraction")
+            regex_urls = extract_urls_with_regex(content, sitemap_url)
+            urls.update(regex_urls)
         
         logging.info(f"Found {len(urls)} URLs in sitemap {sitemap_url}")
         return urls
     except Exception as e:
         logging.error(f"Error fetching sitemap {sitemap_url}: {e}")
+        # Try regex extraction as a last resort
+        try:
+            logging.info("Attempting regex extraction after exception")
+            regex_urls = extract_urls_with_regex(content, sitemap_url)
+            urls.update(regex_urls)
+            logging.info(f"Regex extraction found {len(urls)} URLs after exception")
+        except Exception as regex_error:
+            logging.error(f"Regex extraction also failed: {regex_error}")
         return urls
 
 def normalize_url(url):
@@ -175,6 +218,23 @@ def normalize_url(url):
         path = path[:-1]
     # Reconstruct URL without query parameters and fragments
     return f"{parsed.scheme}://{parsed.netloc}{path}"
+
+def is_valid_url(url):
+    """Check if a URL is valid and should be included in results."""
+    if not url:
+        return False
+        
+    # Skip URLs with common non-content extensions
+    skip_extensions = ['.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.woff', '.ttf']
+    for ext in skip_extensions:
+        if url.lower().endswith(ext):
+            return False
+            
+    # Skip URLs with common query parameters that indicate non-content
+    if any(param in url for param in ['?replytocom=', '?share=', '?like=']):
+        return False
+        
+    return True
 
 def spider_website(start_url, max_pages=10000):
     """Spider a website and return all discovered URLs."""
@@ -246,10 +306,26 @@ def main():
                 sys.exit(1)
         
         # Get URLs from sitemap
-        sitemap_urls = get_sitemap_urls(sitemap_url)
+        sitemap_urls_raw = get_sitemap_urls(sitemap_url)
+        
+        # Filter and normalize sitemap URLs
+        sitemap_urls = set()
+        for url in sitemap_urls_raw:
+            if is_valid_url(url):
+                sitemap_urls.add(normalize_url(url))
+        
+        logging.info(f"After filtering and normalization, found {len(sitemap_urls)} valid URLs in sitemap")
         
         # Get URLs from spidering
-        site_urls = spider_website(args.start_url)
+        site_urls_raw = spider_website(args.start_url)
+        
+        # Filter and normalize site URLs
+        site_urls = set()
+        for url in site_urls_raw:
+            if is_valid_url(url):
+                site_urls.add(normalize_url(url))
+                
+        logging.info(f"After filtering and normalization, found {len(site_urls)} valid URLs from spidering")
         
         # Check if we were interrupted
         if interrupted:
