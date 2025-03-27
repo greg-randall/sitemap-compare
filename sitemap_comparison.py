@@ -116,6 +116,26 @@ def get_sitemap_urls(sitemap_url):
                         urls.add(url_element.text.strip())
             except ET.ParseError as e:
                 logging.error(f"XML parsing error in sitemap {sitemap_url}: {e}")
+                # Try to parse as HTML with BeautifulSoup if XML parsing fails
+                logging.info(f"Attempting to parse {sitemap_url} as HTML sitemap")
+                soup = BeautifulSoup(content, 'html.parser')
+                
+                # Look for links in the page
+                sitemap_links = []
+                for a_tag in soup.find_all('a', href=True):
+                    href = a_tag['href']
+                    if href.startswith(('http://', 'https://')):
+                        if 'sitemap' in href.lower() and href.endswith(('.xml', '.xml.gz')):
+                            sitemap_links.append(href)
+                        else:
+                            urls.add(href)
+                
+                # If we found sitemap links, process them recursively
+                if sitemap_links:
+                    logging.info(f"Found {len(sitemap_links)} sitemap links in HTML sitemap")
+                    for sub_sitemap_url in sitemap_links:
+                        sub_urls = get_sitemap_urls(sub_sitemap_url)
+                        urls.update(sub_urls)
         
         # Check if it's a text sitemap (one URL per line)
         elif all(line.startswith(('http://', 'https://')) for line in content.splitlines() if line.strip()):
@@ -123,6 +143,22 @@ def get_sitemap_urls(sitemap_url):
                 line = line.strip()
                 if line and line.startswith(('http://', 'https://')):
                     urls.add(line)
+        
+        # If no URLs found yet, try to extract URLs from HTML content
+        if not urls:
+            logging.info(f"Attempting to extract URLs from HTML content in {sitemap_url}")
+            soup = BeautifulSoup(content, 'html.parser')
+            
+            # Extract URLs from any HTML table that might contain sitemap data
+            for a_tag in soup.find_all('a', href=True):
+                href = a_tag['href']
+                if href.startswith(('http://', 'https://')):
+                    if 'sitemap' in href.lower() and href.endswith(('.xml', '.xml.gz')):
+                        logging.info(f"Found sitemap link in HTML: {href}")
+                        sub_urls = get_sitemap_urls(href)
+                        urls.update(sub_urls)
+                    else:
+                        urls.add(href)
         
         logging.info(f"Found {len(urls)} URLs in sitemap {sitemap_url}")
         return urls
