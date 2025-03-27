@@ -15,6 +15,7 @@ import os
 import datetime
 import time
 import hashlib
+from tqdm import tqdm
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -26,7 +27,12 @@ parser.add_argument('--sitemap-url', help='The URL of the sitemap (optional, wil
 parser.add_argument('--output-prefix', default='comparison_results', help='Prefix for output files')
 parser.add_argument('--workers', type=int, default=4, help='Number of parallel workers for spidering (default: 4)')
 parser.add_argument('--max-pages', type=int, default=10000, help='Maximum number of pages to spider (default: 10000)')
+parser.add_argument('--verbose', action='store_true', help='Enable verbose logging output')
 args = parser.parse_args()
+
+# Set logging level based on verbose flag
+if not args.verbose:
+    logging.getLogger().setLevel(logging.WARNING)
 
 # Global flag to track interruption
 interrupted = False
@@ -40,9 +46,12 @@ def signal_handler(sig, frame):
 # Register the signal handler
 signal.signal(signal.SIGINT, signal_handler)
 
-def discover_sitemap_url(base_url, output_dir=None):
+def discover_sitemap_url(base_url, output_dir=None, verbose=False):
     """Try to automatically discover the sitemap URL."""
-    logging.info(f"Attempting to discover sitemap for {base_url}")
+    if verbose:
+        logging.info(f"Attempting to discover sitemap for {base_url}")
+    else:
+        print(f"Discovering sitemap for {base_url}...")
     
     # Parse the base URL to get the domain
     parsed_url = urlparse(base_url)
@@ -61,7 +70,8 @@ def discover_sitemap_url(base_url, output_dir=None):
     
     # Check robots.txt first (most reliable method)
     robots_url = f"{base_domain}/robots.txt"
-    logging.info(f"Checking robots.txt at {robots_url}")
+    if verbose:
+        logging.info(f"Checking robots.txt at {robots_url}")
     
     for retry, delay in enumerate(retry_delays):
         try:
@@ -72,7 +82,10 @@ def discover_sitemap_url(base_url, output_dir=None):
                 for line in response.text.splitlines():
                     if line.lower().startswith('sitemap:'):
                         sitemap_url = line.split(':', 1)[1].strip()
-                        logging.info(f"Found sitemap in robots.txt: {sitemap_url}")
+                        if verbose:
+                            logging.info(f"Found sitemap in robots.txt: {sitemap_url}")
+                        else:
+                            print(f"Found sitemap in robots.txt: {sitemap_url}")
                     
                         # Cache the robots.txt file if output_dir is provided
                         if output_dir and response.text:
@@ -80,7 +93,8 @@ def discover_sitemap_url(base_url, output_dir=None):
                                 robots_cache_file = os.path.join(output_dir, "cache-xml", "robots.txt")
                                 with open(robots_cache_file, 'w', encoding='utf-8') as f:
                                     f.write(response.text)
-                                logging.debug(f"Cached robots.txt content")
+                                if verbose:
+                                    logging.debug(f"Cached robots.txt content")
                             except Exception as e:
                                 logging.warning(f"Failed to cache robots.txt content: {e}")
                             
@@ -94,21 +108,27 @@ def discover_sitemap_url(base_url, output_dir=None):
                 'recv failure', 'operation timed out'
             ]):
                 if retry < len(retry_delays) - 1:
-                    logging.warning(f"Connection error checking robots.txt, retrying in {delay}s (attempt {retry+1}/{len(retry_delays)}): {e}")
+                    if verbose:
+                        logging.warning(f"Connection error checking robots.txt, retrying in {delay}s (attempt {retry+1}/{len(retry_delays)}): {e}")
                     time.sleep(delay)
                     continue
-            logging.warning(f"Error checking robots.txt: {e}")
+            if verbose:
+                logging.warning(f"Error checking robots.txt: {e}")
             break
     
     # Try common locations
     for url in potential_locations:
-        logging.info(f"Checking potential sitemap at {url}")
+        if verbose:
+            logging.info(f"Checking potential sitemap at {url}")
         
         for retry, delay in enumerate(retry_delays):
             try:
                 response = requests.get(url, timeout=10)
                 if response.status_code == 200 and ('<urlset' in response.text or '<sitemapindex' in response.text):
-                    logging.info(f"Found sitemap at {url}")
+                    if verbose:
+                        logging.info(f"Found sitemap at {url}")
+                    else:
+                        print(f"Found sitemap at {url}")
                     return url
                 # If we get here with a 200 status but no valid sitemap, break the retry loop
                 break
@@ -119,13 +139,18 @@ def discover_sitemap_url(base_url, output_dir=None):
                     'recv failure', 'operation timed out'
                 ]):
                     if retry < len(retry_delays) - 1:
-                        logging.warning(f"Connection error checking {url}, retrying in {delay}s (attempt {retry+1}/{len(retry_delays)}): {e}")
+                        if verbose:
+                            logging.warning(f"Connection error checking {url}, retrying in {delay}s (attempt {retry+1}/{len(retry_delays)}): {e}")
                         time.sleep(delay)
                         continue
-                logging.warning(f"Error checking {url}: {e}")
+                if verbose:
+                    logging.warning(f"Error checking {url}: {e}")
                 break
     
-    logging.error("Could not automatically discover sitemap")
+    if verbose:
+        logging.error("Could not automatically discover sitemap")
+    else:
+        print("Could not automatically discover sitemap")
     return None
 
 def extract_urls_with_regex(content, base_url):
@@ -197,9 +222,10 @@ def get_cache_xml_filename(url, output_dir):
     cache_xml_dir = os.path.join(output_dir, "cache-xml")
     return os.path.join(cache_xml_dir, filename)
 
-def get_sitemap_urls(sitemap_url, output_dir=None):
+def get_sitemap_urls(sitemap_url, output_dir=None, verbose=False):
     """Extract all URLs from a sitemap, handling different formats and recursion."""
-    logging.info(f"Fetching sitemap from {sitemap_url}")
+    if verbose:
+        logging.info(f"Fetching sitemap from {sitemap_url}")
     urls = set()
     content = ""
     
@@ -215,21 +241,25 @@ def get_sitemap_urls(sitemap_url, output_dir=None):
                 if cache_file:
                     with open(cache_file, 'w', encoding='utf-8') as f:
                         f.write(content)
-                    logging.debug(f"Cached XML content for {sitemap_url}")
+                    if verbose:
+                        logging.debug(f"Cached XML content for {sitemap_url}")
             except Exception as e:
-                logging.warning(f"Failed to cache XML content for {sitemap_url}: {e}")
+                if verbose:
+                    logging.warning(f"Failed to cache XML content for {sitemap_url}: {e}")
         
         # Try direct regex extraction of <loc> tags first (most reliable for malformed XML)
         loc_urls = extract_urls_with_regex(content, sitemap_url)
         if loc_urls:
-            logging.info(f"Found {len(loc_urls)} URLs using direct <loc> tag extraction")
+            if verbose:
+                logging.info(f"Found {len(loc_urls)} URLs using direct <loc> tag extraction")
             
             # Check if any of these are sitemaps themselves
             sitemap_urls = [url for url in loc_urls if 'sitemap' in url.lower() and url.endswith(('.xml', '.xml.gz'))]
             if sitemap_urls:
-                logging.info(f"Found {len(sitemap_urls)} sub-sitemaps to process")
+                if verbose:
+                    logging.info(f"Found {len(sitemap_urls)} sub-sitemaps to process")
                 for sub_sitemap_url in sitemap_urls:
-                    sub_urls = get_sitemap_urls(sub_sitemap_url, output_dir)
+                    sub_urls = get_sitemap_urls(sub_sitemap_url, output_dir, verbose)
                     urls.update(sub_urls)
                     
                 # Remove the sitemap URLs from the regular URLs
@@ -239,7 +269,8 @@ def get_sitemap_urls(sitemap_url, output_dir=None):
                 urls.update(loc_urls)
                 
             if urls:
-                logging.info(f"Successfully extracted URLs from sitemap, found {len(urls)} URLs")
+                if verbose:
+                    logging.info(f"Successfully extracted URLs from sitemap, found {len(urls)} URLs")
                 return urls
         
         # If regex extraction didn't work, try standard XML parsing
@@ -258,10 +289,11 @@ def get_sitemap_urls(sitemap_url, output_dir=None):
                 sitemaps = root.findall('.//sm:sitemap/sm:loc', namespaces) or root.findall('.//sitemap/loc', {})
                 
                 if sitemaps:
-                    logging.info(f"Found sitemap index with {len(sitemaps)} sitemaps")
+                    if verbose:
+                        logging.info(f"Found sitemap index with {len(sitemaps)} sitemaps")
                     for sitemap in sitemaps:
                         sub_sitemap_url = sitemap.text.strip()
-                        sub_urls = get_sitemap_urls(sub_sitemap_url, output_dir)
+                        sub_urls = get_sitemap_urls(sub_sitemap_url, output_dir, verbose)
                         urls.update(sub_urls)
                 else:
                     # Regular sitemap
@@ -272,13 +304,16 @@ def get_sitemap_urls(sitemap_url, output_dir=None):
                         urls.add(url_element.text.strip())
                         
                 if urls:
-                    logging.info(f"Successfully parsed XML sitemap, found {len(urls)} URLs")
+                    if verbose:
+                        logging.info(f"Successfully parsed XML sitemap, found {len(urls)} URLs")
                     return urls
             except ET.ParseError as e:
-                logging.error(f"XML parsing error in sitemap {sitemap_url}: {e}")
+                if verbose:
+                    logging.error(f"XML parsing error in sitemap {sitemap_url}: {e}")
         
         # If XML parsing failed or it's not an XML sitemap, try HTML parsing
-        logging.info(f"Attempting to parse {sitemap_url} as HTML sitemap")
+        if verbose:
+            logging.info(f"Attempting to parse {sitemap_url} as HTML sitemap")
         
         # Try BeautifulSoup parsing
         try:
@@ -294,8 +329,9 @@ def get_sitemap_urls(sitemap_url, output_dir=None):
                 
                 # Check if it's a sitemap link
                 if 'sitemap' in href.lower() and href.endswith(('.xml', '.xml.gz')):
-                    logging.info(f"Found sitemap link in HTML: {href}")
-                    sub_urls = get_sitemap_urls(href, output_dir)
+                    if verbose:
+                        logging.info(f"Found sitemap link in HTML: {href}")
+                    sub_urls = get_sitemap_urls(href, output_dir, verbose)
                     urls.update(sub_urls)
                 else:
                     # Parse the URL to check if it's from the same domain
@@ -305,7 +341,8 @@ def get_sitemap_urls(sitemap_url, output_dir=None):
                     if parsed_href.netloc == parsed_sitemap.netloc:
                         urls.add(href)
         except Exception as e:
-            logging.error(f"BeautifulSoup parsing error: {e}")
+            if verbose:
+                logging.error(f"BeautifulSoup parsing error: {e}")
         
         # Check if it's a text sitemap (one URL per line)
         if not urls and all(line.startswith(('http://', 'https://')) for line in content.splitlines() if line.strip()):
@@ -316,22 +353,28 @@ def get_sitemap_urls(sitemap_url, output_dir=None):
         
         # If still no URLs found, use regex as a last resort
         if not urls:
-            logging.info("No URLs found with standard methods, trying regex extraction")
+            if verbose:
+                logging.info("No URLs found with standard methods, trying regex extraction")
             regex_urls = extract_urls_with_regex(content, sitemap_url)
             urls.update(regex_urls)
         
-        logging.info(f"Found {len(urls)} URLs in sitemap {sitemap_url}")
+        if verbose:
+            logging.info(f"Found {len(urls)} URLs in sitemap {sitemap_url}")
         return urls
     except Exception as e:
-        logging.error(f"Error fetching sitemap {sitemap_url}: {e}")
+        if verbose:
+            logging.error(f"Error fetching sitemap {sitemap_url}: {e}")
         # Try regex extraction as a last resort
         try:
-            logging.info("Attempting regex extraction after exception")
+            if verbose:
+                logging.info("Attempting regex extraction after exception")
             regex_urls = extract_urls_with_regex(content, sitemap_url)
             urls.update(regex_urls)
-            logging.info(f"Regex extraction found {len(urls)} URLs after exception")
+            if verbose:
+                logging.info(f"Regex extraction found {len(urls)} URLs after exception")
         except Exception as regex_error:
-            logging.error(f"Regex extraction also failed: {regex_error}")
+            if verbose:
+                logging.error(f"Regex extraction also failed: {regex_error}")
         return urls
 
 def normalize_url(url):
@@ -390,7 +433,7 @@ def get_cache_filename(url, cache_dir):
     filename = url_to_filename(url) + ".html"
     return os.path.join(cache_dir, filename)
 
-def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None):
+def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None, verbose=False):
     """Spider a website and return all discovered URLs using parallel workers."""
     global interrupted
     base_domain = urlparse(start_url).netloc
@@ -414,7 +457,13 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None):
         cache_dir = os.path.join(output_dir, "cache")
         os.makedirs(cache_dir, exist_ok=True)
     
-    logging.info(f"Starting to spider {start_url} with {num_workers} parallel workers")
+    # Progress bar for non-verbose mode
+    progress_bar = None
+    if verbose:
+        logging.info(f"Starting to spider {start_url} with {num_workers} parallel workers")
+    else:
+        print(f"Spidering website: {start_url}")
+        progress_bar = tqdm(total=max_pages, desc="Pages crawled", unit="pages")
     
     def process_url():
         nonlocal visited_count
@@ -436,8 +485,11 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None):
                         continue
                     visited_urls.add(current_url)
                     visited_count += 1
+                    if not verbose and progress_bar:
+                        progress_bar.update(1)
                 
-                logging.info(f"Visiting {current_url} ({visited_count}/{max_pages})")
+                if verbose:
+                    logging.info(f"Visiting {current_url} ({visited_count}/{max_pages})")
                 
                 try:
                     # Implement exponential backoff for connection errors
@@ -459,7 +511,8 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None):
                                 'recv failure', 'operation timed out'
                             ]):
                                 if retry < len(retry_delays) - 1:  # Don't log on last attempt
-                                    logging.warning(f"Connection error on {current_url}, retrying in {delay}s (attempt {retry+1}/{len(retry_delays)}): {e}")
+                                    if verbose:
+                                        logging.warning(f"Connection error on {current_url}, retrying in {delay}s (attempt {retry+1}/{len(retry_delays)}): {e}")
                                     time.sleep(delay)
                                     continue
                             # For non-connection errors or last retry, don't retry
@@ -482,9 +535,11 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None):
                             cache_file = get_cache_filename(current_url, cache_dir)
                             with open(cache_file, 'w', encoding='utf-8') as f:
                                 f.write(response.text)
-                            logging.debug(f"Cached content for {current_url}")
+                            if verbose:
+                                logging.debug(f"Cached content for {current_url}")
                         except Exception as e:
-                            logging.warning(f"Failed to cache content for {current_url}: {e}")
+                            if verbose:
+                                logging.warning(f"Failed to cache content for {current_url}: {e}")
                     
                     if not is_html:
                         url_queue.task_done()
@@ -547,12 +602,14 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None):
                         url_queue.put(url)
                         
                 except Exception as e:
-                    logging.error(f"Error visiting {current_url}: {e}")
+                    if verbose:
+                        logging.error(f"Error visiting {current_url}: {e}")
                 
                 url_queue.task_done()
                 
             except Exception as e:
-                logging.error(f"Worker error: {e}")
+                if verbose:
+                    logging.error(f"Worker error: {e}")
     
     try:
         # Create and start worker threads
@@ -573,12 +630,21 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None):
                     worker.cancel()
     
     except Exception as e:
-        logging.error(f"Spidering error: {e}")
+        if verbose:
+            logging.error(f"Spidering error: {e}")
         
     if interrupted:
-        logging.info("Spidering interrupted. Returning URLs found so far...")
+        if verbose:
+            logging.info("Spidering interrupted. Returning URLs found so far...")
     
-    logging.info(f"Spidering complete. Found {len(found_urls)} URLs")
+    # Close progress bar if it exists
+    if not verbose and progress_bar:
+        progress_bar.close()
+        
+    if verbose:
+        logging.info(f"Spidering complete. Found {len(found_urls)} URLs")
+    else:
+        print(f"Spidering complete. Found {len(found_urls)} URLs")
     return found_urls
 
 def create_output_directory(start_url):
@@ -604,26 +670,37 @@ def create_output_directory(start_url):
     logging.info(f"Created output directory: {base_dir}")
     return base_dir
 
-def cache_missing_urls(urls, output_dir):
+def cache_missing_urls(urls, output_dir, verbose=False):
     """Fetch and cache URLs that are in the sitemap but not found by spidering."""
     if not urls:
-        logging.info("No missing URLs to cache")
+        if verbose:
+            logging.info("No missing URLs to cache")
         return
         
     cache_xml_dir = os.path.join(output_dir, "cache-xml")
     os.makedirs(cache_xml_dir, exist_ok=True)
     
-    logging.info(f"Caching {len(urls)} URLs found in sitemap but not in site spider")
+    # Progress bar for non-verbose mode
+    pbar = None
+    if verbose:
+        logging.info(f"Caching {len(urls)} URLs found in sitemap but not in site spider")
+    else:
+        print(f"Caching {len(urls)} missing URLs")
+        pbar = tqdm(total=len(urls), desc="Caching URLs", unit="urls")
     
     # Retry delays for exponential backoff
     retry_delays = [1, 2, 4, 8, 16, 32]
     
     for i, url in enumerate(sorted(urls)):
         if interrupted:
-            logging.info("Caching interrupted. Exiting...")
+            if verbose:
+                logging.info("Caching interrupted. Exiting...")
+            if not verbose and pbar:
+                pbar.close()
             break
             
-        logging.info(f"Caching URL {i+1}/{len(urls)}: {url}")
+        if verbose:
+            logging.info(f"Caching URL {i+1}/{len(urls)}: {url}")
         
         # Generate cache filename
         filename = url_to_filename(url) + ".html"
@@ -631,7 +708,10 @@ def cache_missing_urls(urls, output_dir):
         
         # Skip if already cached
         if os.path.exists(cache_file):
-            logging.info(f"URL already cached: {url}")
+            if verbose:
+                logging.info(f"URL already cached: {url}")
+            if not verbose and pbar:
+                pbar.update(1)
             continue
             
         # Fetch with retry
@@ -642,7 +722,10 @@ def cache_missing_urls(urls, output_dir):
                 # Cache the content
                 with open(cache_file, 'w', encoding='utf-8') as f:
                     f.write(response.text)
-                logging.info(f"Successfully cached: {url}")
+                if verbose:
+                    logging.info(f"Successfully cached: {url}")
+                if not verbose and pbar:
+                    pbar.update(1)
                 break
             except Exception as e:
                 error_message = str(e).lower()
@@ -651,10 +734,12 @@ def cache_missing_urls(urls, output_dir):
                     'recv failure', 'operation timed out'
                 ]):
                     if retry < len(retry_delays) - 1:
-                        logging.warning(f"Connection error caching {url}, retrying in {delay}s (attempt {retry+1}/{len(retry_delays)}): {e}")
+                        if verbose:
+                            logging.warning(f"Connection error caching {url}, retrying in {delay}s (attempt {retry+1}/{len(retry_delays)}): {e}")
                         time.sleep(delay)
                         continue
-                logging.error(f"Failed to cache {url}: {e}")
+                if verbose:
+                    logging.error(f"Failed to cache {url}: {e}")
                 break
 
 def main():
@@ -663,16 +748,21 @@ def main():
         # Create output directory
         output_dir = create_output_directory(args.start_url)
         
+        # Get verbose flag
+        verbose = args.verbose
+        
         # Get sitemap URL (discover if not provided)
         sitemap_url = args.sitemap_url
         if not sitemap_url:
-            sitemap_url = discover_sitemap_url(args.start_url, output_dir)
+            sitemap_url = discover_sitemap_url(args.start_url, output_dir, verbose)
             if not sitemap_url:
                 logging.error("Could not discover sitemap. Please provide sitemap URL with --sitemap-url")
                 sys.exit(1)
         
         # Get URLs from sitemap
-        sitemap_urls_raw = get_sitemap_urls(sitemap_url, output_dir)
+        if not verbose:
+            print("Extracting URLs from sitemap...")
+        sitemap_urls_raw = get_sitemap_urls(sitemap_url, output_dir, verbose)
         
         # Filter and normalize sitemap URLs
         sitemap_urls = set()
@@ -680,10 +770,15 @@ def main():
             if is_valid_url(url):
                 sitemap_urls.add(normalize_url(url))
         
-        logging.info(f"After filtering and normalization, found {len(sitemap_urls)} valid URLs in sitemap")
+        if verbose:
+            logging.info(f"After filtering and normalization, found {len(sitemap_urls)} valid URLs in sitemap")
+        else:
+            print(f"Found {len(sitemap_urls)} valid URLs in sitemap")
         
         # Get URLs from spidering
-        site_urls_raw = spider_website(args.start_url, max_pages=args.max_pages, num_workers=args.workers, output_dir=output_dir)
+        site_urls_raw = spider_website(args.start_url, max_pages=args.max_pages, 
+                                      num_workers=args.workers, output_dir=output_dir, 
+                                      verbose=verbose)
         
         # Filter and normalize site URLs
         site_urls = set()
@@ -691,7 +786,10 @@ def main():
             if is_valid_url(url):
                 site_urls.add(normalize_url(url))
                 
-        logging.info(f"After filtering and normalization, found {len(site_urls)} valid URLs from spidering")
+        if verbose:
+            logging.info(f"After filtering and normalization, found {len(site_urls)} valid URLs from spidering")
+        else:
+            print(f"Found {len(site_urls)} valid URLs from spidering")
         
         # Check if we were interrupted
         if interrupted:
@@ -707,16 +805,22 @@ def main():
         with open(missing_from_sitemap_file, 'w') as f:
             for url in sorted(in_site_not_sitemap):
                 f.write(f"{url}\n")
-        logging.info(f"Wrote {len(in_site_not_sitemap)} URLs missing from sitemap to {missing_from_sitemap_file}")
+        if verbose:
+            logging.info(f"Wrote {len(in_site_not_sitemap)} URLs missing from sitemap to {missing_from_sitemap_file}")
+        else:
+            print(f"Found {len(in_site_not_sitemap)} URLs missing from sitemap")
         
         missing_from_site_file = os.path.join(output_dir, "missing_from_site.txt")
         with open(missing_from_site_file, 'w') as f:
             for url in sorted(in_sitemap_not_site):
                 f.write(f"{url}\n")
-        logging.info(f"Wrote {len(in_sitemap_not_site)} URLs missing from site to {missing_from_site_file}")
+        if verbose:
+            logging.info(f"Wrote {len(in_sitemap_not_site)} URLs missing from site to {missing_from_site_file}")
+        else:
+            print(f"Found {len(in_sitemap_not_site)} URLs missing from site")
         
         # Cache pages that are in sitemap but not found by site spider
-        cache_missing_urls(in_sitemap_not_site, output_dir)
+        cache_missing_urls(in_sitemap_not_site, output_dir, verbose)
         
         # Write all URLs to files for reference
         all_sitemap_urls_file = os.path.join(output_dir, "all_sitemap_urls.txt")
@@ -729,13 +833,20 @@ def main():
             for url in sorted(site_urls):
                 f.write(f"{url}\n")
         
-        logging.info("Comparison complete!")
+        if verbose:
+            logging.info("Comparison complete!")
+        else:
+            print("\nComparison complete!")
+            print(f"Results saved to: {output_dir}")
     except Exception as e:
         logging.error(f"Error in main process: {e}")
         sys.exit(1)
     finally:
         if interrupted:
-            logging.info("Process interrupted by user. Exiting...")
+            if verbose:
+                logging.info("Process interrupted by user. Exiting...")
+            else:
+                print("\nProcess interrupted by user. Exiting...")
             sys.exit(0)
 
 if __name__ == "__main__":
