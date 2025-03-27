@@ -265,7 +265,23 @@ def is_valid_url(url):
         return False
         
     # Skip URLs with common non-content extensions
-    skip_extensions = ['.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.woff', '.ttf']
+    skip_extensions = [
+        # Style and script files
+        '.css', '.js', '.json', '.xml', 
+        # Images
+        '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.webp', '.bmp', '.tiff', '.tif',
+        # Fonts
+        '.woff', '.woff2', '.ttf', '.eot', '.otf',
+        # Documents
+        '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.odt', '.ods', '.odp',
+        # Archives
+        '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2',
+        # Media
+        '.mp3', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.wav', '.ogg', '.webm',
+        # Other
+        '.exe', '.dll', '.so', '.dmg', '.pkg'
+    ]
+    
     for ext in skip_extensions:
         if url.lower().endswith(ext):
             return False
@@ -325,7 +341,20 @@ def spider_website(start_url, max_pages=10000, num_workers=4):
                     with found_lock:
                         found_urls.add(current_url)
                     
-                    if 'text/html' not in response.headers.get('Content-Type', ''):
+                    # Skip non-HTML content types and binary files
+                    content_type = response.headers.get('Content-Type', '').lower()
+                    if ('text/html' not in content_type and 
+                        'application/xhtml+xml' not in content_type):
+                        url_queue.task_done()
+                        continue
+                        
+                    # Skip URLs with file extensions we want to avoid
+                    parsed_url = urlparse(current_url)
+                    path = parsed_url.path.lower()
+                    if any(path.endswith(ext) for ext in [
+                        '.jpg', '.jpeg', '.png', '.gif', '.pdf', '.doc', '.docx', 
+                        '.xls', '.xlsx', '.zip', '.rar', '.mp3', '.mp4', '.avi'
+                    ]):
                         url_queue.task_done()
                         continue
                         
