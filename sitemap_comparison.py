@@ -463,13 +463,13 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None, v
         logging.info(f"Starting to spider {start_url} with {num_workers} parallel workers")
     else:
         print(f"Spidering website: {start_url}")
-        # Don't show a total initially, just show completed count
-        # We need to set total=0 to avoid "bool() undefined when iterable == total == None" error
-        progress_bar = tqdm(total=0, desc="Pages crawled", unit="pages", dynamic_ncols=True, bar_format='{desc}: {n_fmt} {unit} [{elapsed}<{remaining}, {rate_fmt}]')
+        # Start with a small initial estimate
+        initial_estimate = 10
+        progress_bar = tqdm(total=initial_estimate, desc="Pages crawled", unit="pages", dynamic_ncols=True)
     
     # Variables for progress tracking
+    estimated_total = initial_estimate
     last_update_time = time.time()
-    progress_update_interval = 0.5  # seconds
     
     def process_url():
         nonlocal visited_count, last_update_time
@@ -494,8 +494,18 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None, v
                     
                     # Update progress bar
                     if not verbose and progress_bar:
-                        # Simply update the progress count without trying to estimate a total
+                        # Update the progress bar
                         progress_bar.update(1)
+                        
+                        # Periodically adjust the total based on queue size and visited count
+                        current_time = time.time()
+                        if current_time - last_update_time > 0.5:
+                            new_estimate = max(len(visited_urls) + url_queue.qsize(), len(visited_urls) + 5)
+                            if new_estimate > estimated_total:
+                                estimated_total = new_estimate
+                                progress_bar.total = estimated_total
+                                progress_bar.refresh()
+                            last_update_time = current_time
                 
                 if verbose:
                     logging.info(f"Visiting {current_url} ({visited_count}/{max_pages})")
@@ -650,6 +660,9 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None, v
     
     # Close progress bar if it exists
     if not verbose and progress_bar:
+        # Set the final total to the actual number of URLs visited
+        progress_bar.total = len(visited_urls)
+        progress_bar.refresh()
         progress_bar.close()
         
     if verbose:
