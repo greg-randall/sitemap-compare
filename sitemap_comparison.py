@@ -464,7 +464,8 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None, v
     else:
         print(f"Spidering website: {start_url}")
         # Don't show a total initially, just show completed count
-        progress_bar = tqdm(desc="Pages crawled", unit="pages", dynamic_ncols=True, bar_format='{desc}: {n_fmt} {unit} [{elapsed}<{remaining}, {rate_fmt}]')
+        # We need to set total=0 to avoid "bool() undefined when iterable == total == None" error
+        progress_bar = tqdm(total=0, desc="Pages crawled", unit="pages", dynamic_ncols=True, bar_format='{desc}: {n_fmt} {unit} [{elapsed}<{remaining}, {rate_fmt}]')
     
     # Variables for progress tracking
     last_update_time = time.time()
