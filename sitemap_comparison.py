@@ -80,7 +80,18 @@ def discover_sitemap_url(base_url):
 def extract_urls_with_regex(content, base_url):
     """Extract URLs using regex as a fallback method."""
     urls = set()
-    # Match both absolute URLs and relative URLs
+    
+    # First try to extract URLs from <loc> tags (sitemap format)
+    loc_pattern = re.compile(r'<loc>(.*?)</loc>', re.DOTALL)
+    loc_matches = loc_pattern.findall(content)
+    
+    if loc_matches:
+        logging.info(f"Found {len(loc_matches)} URLs in <loc> tags")
+        for url in loc_matches:
+            urls.add(url.strip())
+        return urls
+    
+    # If no <loc> tags found, try extracting from href attributes
     url_pattern = re.compile(r'href=[\'"]?([^\'" >]+)[\'"]?')
     matches = url_pattern.findall(content)
     
@@ -111,13 +122,37 @@ def get_sitemap_urls(sitemap_url):
     """Extract all URLs from a sitemap, handling different formats and recursion."""
     logging.info(f"Fetching sitemap from {sitemap_url}")
     urls = set()
+    content = ""
     
     try:
         response = requests.get(sitemap_url, timeout=10)
         response.raise_for_status()
         content = response.text
         
-        # First try XML parsing for standard sitemaps
+        # Try direct regex extraction of <loc> tags first (most reliable for malformed XML)
+        loc_urls = extract_urls_with_regex(content, sitemap_url)
+        if loc_urls:
+            logging.info(f"Found {len(loc_urls)} URLs using direct <loc> tag extraction")
+            
+            # Check if any of these are sitemaps themselves
+            sitemap_urls = [url for url in loc_urls if 'sitemap' in url.lower() and url.endswith(('.xml', '.xml.gz'))]
+            if sitemap_urls:
+                logging.info(f"Found {len(sitemap_urls)} sub-sitemaps to process")
+                for sub_sitemap_url in sitemap_urls:
+                    sub_urls = get_sitemap_urls(sub_sitemap_url)
+                    urls.update(sub_urls)
+                    
+                # Remove the sitemap URLs from the regular URLs
+                regular_urls = loc_urls - set(sitemap_urls)
+                urls.update(regular_urls)
+            else:
+                urls.update(loc_urls)
+                
+            if urls:
+                logging.info(f"Successfully extracted URLs from sitemap, found {len(urls)} URLs")
+                return urls
+        
+        # If regex extraction didn't work, try standard XML parsing
         if content.strip().startswith('<?xml') or '<urlset' in content or '<sitemapindex' in content:
             try:
                 # Handle XML sitemaps
