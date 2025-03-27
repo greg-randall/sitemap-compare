@@ -40,7 +40,7 @@ def signal_handler(sig, frame):
 # Register the signal handler
 signal.signal(signal.SIGINT, signal_handler)
 
-def discover_sitemap_url(base_url):
+def discover_sitemap_url(base_url, output_dir=None):
     """Try to automatically discover the sitemap URL."""
     logging.info(f"Attempting to discover sitemap for {base_url}")
     
@@ -73,6 +73,17 @@ def discover_sitemap_url(base_url):
                     if line.lower().startswith('sitemap:'):
                         sitemap_url = line.split(':', 1)[1].strip()
                         logging.info(f"Found sitemap in robots.txt: {sitemap_url}")
+                    
+                        # Cache the robots.txt file if output_dir is provided
+                        if output_dir and response.text:
+                            try:
+                                robots_cache_file = os.path.join(output_dir, "cache-xml", "robots.txt")
+                                with open(robots_cache_file, 'w', encoding='utf-8') as f:
+                                    f.write(response.text)
+                                logging.debug(f"Cached robots.txt content")
+                            except Exception as e:
+                                logging.warning(f"Failed to cache robots.txt content: {e}")
+                            
                         return sitemap_url
             # If we get here with a 200 status but no sitemap, break the retry loop
             break
@@ -158,7 +169,17 @@ def extract_urls_with_regex(content, base_url):
     logging.info(f"Regex extraction found {len(urls)} URLs")
     return urls
 
-def get_sitemap_urls(sitemap_url):
+def get_cache_xml_filename(url, output_dir):
+    """Generate a filename for caching a sitemap XML content."""
+    if not output_dir:
+        return None
+        
+    # Create a hash of the URL to use as filename
+    url_hash = hashlib.md5(url.encode('utf-8')).hexdigest()
+    cache_xml_dir = os.path.join(output_dir, "cache-xml")
+    return os.path.join(cache_xml_dir, f"{url_hash}.xml")
+
+def get_sitemap_urls(sitemap_url, output_dir=None):
     """Extract all URLs from a sitemap, handling different formats and recursion."""
     logging.info(f"Fetching sitemap from {sitemap_url}")
     urls = set()
@@ -168,6 +189,17 @@ def get_sitemap_urls(sitemap_url):
         response = requests.get(sitemap_url, timeout=10)
         response.raise_for_status()
         content = response.text
+        
+        # Cache the XML content if output_dir is provided
+        if output_dir and content:
+            try:
+                cache_file = get_cache_xml_filename(sitemap_url, output_dir)
+                if cache_file:
+                    with open(cache_file, 'w', encoding='utf-8') as f:
+                        f.write(content)
+                    logging.debug(f"Cached XML content for {sitemap_url}")
+            except Exception as e:
+                logging.warning(f"Failed to cache XML content for {sitemap_url}: {e}")
         
         # Try direct regex extraction of <loc> tags first (most reliable for malformed XML)
         loc_urls = extract_urls_with_regex(content, sitemap_url)
@@ -179,7 +211,7 @@ def get_sitemap_urls(sitemap_url):
             if sitemap_urls:
                 logging.info(f"Found {len(sitemap_urls)} sub-sitemaps to process")
                 for sub_sitemap_url in sitemap_urls:
-                    sub_urls = get_sitemap_urls(sub_sitemap_url)
+                    sub_urls = get_sitemap_urls(sub_sitemap_url, output_dir)
                     urls.update(sub_urls)
                     
                 # Remove the sitemap URLs from the regular URLs
@@ -211,7 +243,7 @@ def get_sitemap_urls(sitemap_url):
                     logging.info(f"Found sitemap index with {len(sitemaps)} sitemaps")
                     for sitemap in sitemaps:
                         sub_sitemap_url = sitemap.text.strip()
-                        sub_urls = get_sitemap_urls(sub_sitemap_url)
+                        sub_urls = get_sitemap_urls(sub_sitemap_url, output_dir)
                         urls.update(sub_urls)
                 else:
                     # Regular sitemap
@@ -245,7 +277,7 @@ def get_sitemap_urls(sitemap_url):
                 # Check if it's a sitemap link
                 if 'sitemap' in href.lower() and href.endswith(('.xml', '.xml.gz')):
                     logging.info(f"Found sitemap link in HTML: {href}")
-                    sub_urls = get_sitemap_urls(href)
+                    sub_urls = get_sitemap_urls(href, output_dir)
                     urls.update(sub_urls)
                 else:
                     # Parse the URL to check if it's from the same domain
@@ -544,9 +576,12 @@ def create_output_directory(start_url):
     base_dir = os.path.join("sites", domain, timestamp)
     os.makedirs(base_dir, exist_ok=True)
     
-    # Create cache directory
+    # Create cache directories
     cache_dir = os.path.join(base_dir, "cache")
     os.makedirs(cache_dir, exist_ok=True)
+    
+    cache_xml_dir = os.path.join(base_dir, "cache-xml")
+    os.makedirs(cache_xml_dir, exist_ok=True)
     
     logging.info(f"Created output directory: {base_dir}")
     return base_dir
@@ -554,19 +589,19 @@ def create_output_directory(start_url):
 def main():
     global interrupted
     try:
+        # Create output directory
+        output_dir = create_output_directory(args.start_url)
+        
         # Get sitemap URL (discover if not provided)
         sitemap_url = args.sitemap_url
         if not sitemap_url:
-            sitemap_url = discover_sitemap_url(args.start_url)
+            sitemap_url = discover_sitemap_url(args.start_url, output_dir)
             if not sitemap_url:
                 logging.error("Could not discover sitemap. Please provide sitemap URL with --sitemap-url")
                 sys.exit(1)
         
-        # Create output directory
-        output_dir = create_output_directory(args.start_url)
-        
         # Get URLs from sitemap
-        sitemap_urls_raw = get_sitemap_urls(sitemap_url)
+        sitemap_urls_raw = get_sitemap_urls(sitemap_url, output_dir)
         
         # Filter and normalize sitemap URLs
         sitemap_urls = set()
