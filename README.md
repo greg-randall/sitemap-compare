@@ -1,6 +1,6 @@
 # Sitemap Comparison Tool
 
-A powerful Python utility that compares URLs found in a website's sitemap with URLs discovered by crawling the site. This tool helps identify discrepancies between what's publicly disclosed in sitemaps and what's actually accessible on a website.
+A Python utility that compares URLs found in a website's sitemap with URLs discovered by crawling the site. This tool helps identify discrepancies between what's publicly disclosed in sitemaps and what's actually accessible on a website.
 
 ## Why Use This Tool?
 
@@ -138,16 +138,6 @@ The most interesting findings are typically in the `missing_from_sitemap.txt` fi
 - **Connection Errors**: The tool implements exponential backoff, but you might need to run it again if a site has strict rate limiting
 - **Access Denied**: Some sites may block automated crawling; consider using a VPN or proxy
 - **Hidden Content Not Found**: Try increasing `--max-pages` as hidden content is often deeper in the site structure
-
-## Ethical Considerations
-
-This tool is intended for legitimate security research, SEO analysis, and website auditing. Always:
-
-1. Respect robots.txt directives
-2. Use reasonable crawl rates to avoid overloading servers
-3. Obtain permission before extensively crawling websites you don't own
-4. Don't use discovered information for malicious purposes
-5. Report security vulnerabilities responsibly if discovered
 
 ## License
 
