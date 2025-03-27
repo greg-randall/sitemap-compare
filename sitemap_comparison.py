@@ -376,6 +376,26 @@ def spider_website(start_url, max_pages=10000, num_workers=4):
                         # Remove fragments
                         clean_url = full_url.split('#')[0]
                         
+                        # Skip binary and non-HTML file types before adding to queue
+                        path = parsed_url.path.lower()
+                        if any(path.endswith(ext) for ext in [
+                            # Style and script files
+                            '.css', '.js', '.json', '.xml', 
+                            # Images
+                            '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.webp', '.bmp', '.tiff', '.tif',
+                            # Fonts
+                            '.woff', '.woff2', '.ttf', '.eot', '.otf',
+                            # Documents
+                            '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.odt', '.ods', '.odp',
+                            # Archives
+                            '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2',
+                            # Media
+                            '.mp3', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.wav', '.ogg', '.webm',
+                            # Other
+                            '.exe', '.dll', '.so', '.dmg', '.pkg'
+                        ]):
+                            continue
+                        
                         with visited_lock:
                             if clean_url not in visited_urls:
                                 new_urls.append(clean_url)
