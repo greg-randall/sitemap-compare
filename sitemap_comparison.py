@@ -463,8 +463,8 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None, v
         logging.info(f"Starting to spider {start_url} with {num_workers} parallel workers")
     else:
         print(f"Spidering website: {start_url}")
-        # Start with a small initial estimate that will grow as we discover pages
-        initial_estimate = 100  # Start with a reasonable small number
+        # Start with a value of 1 and update as we find more pages
+        initial_estimate = 1  # Start with just 1
         progress_bar = tqdm(total=initial_estimate, desc="Pages crawled", unit="pages", dynamic_ncols=True)
     
     # Add a variable to track the estimated total pages
@@ -496,14 +496,11 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None, v
                     if not verbose and progress_bar:
                         # Update the total estimate based on queue size
                         current_time = time.time()
-                        if current_time - last_update_time > 1:  # Update more frequently (every 1 second)
-                            new_estimate = max(visited_count + url_queue.qsize(), visited_count + 10)
+                        if current_time - last_update_time > 0.5:  # Update more frequently (every 0.5 seconds)
+                            # Always update to at least the current count plus queue size
+                            new_estimate = max(visited_count + url_queue.qsize(), visited_count + 1)
                             if new_estimate > estimated_total:
                                 estimated_total = new_estimate
-                                progress_bar.total = estimated_total
-                                progress_bar.refresh()
-                            elif visited_count > estimated_total * 0.9:  # If we're close to the end
-                                estimated_total = max(visited_count + 10, int(visited_count * 1.1))
                                 progress_bar.total = estimated_total
                                 progress_bar.refresh()
                             last_update_time = current_time
