@@ -624,7 +624,7 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None, v
                         if not verbose and progress_bar and len(new_urls) > 5:  # Lower threshold to update more frequently
                             with visited_lock:
                                 current_time = time.time()
-                                if current_time - last_update_time > 1:  # Update more frequently
+                                if current_time - last_update_time > 0.5:  # Update more frequently (every 0.5 seconds)
                                     new_estimate = visited_count + url_queue.qsize()
                                     if new_estimate > estimated_total:
                                         estimated_total = new_estimate
