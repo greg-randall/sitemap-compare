@@ -463,16 +463,12 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None, v
         logging.info(f"Starting to spider {start_url} with {num_workers} parallel workers")
     else:
         print(f"Spidering website: {start_url}")
-        # Start with a value of 1 and update as we find more pages
-        initial_estimate = 1  # Start with just 1
-        progress_bar = tqdm(total=initial_estimate, desc="Pages crawled", unit="pages", dynamic_ncols=True)
+        # Don't show a total initially, just show completed count
+        progress_bar = tqdm(desc="Pages crawled", unit="pages", dynamic_ncols=True, bar_format='{desc}: {n_fmt} {unit} [{elapsed}<{remaining}, {rate_fmt}]')
     
-    # Add a variable to track the estimated total pages
-    estimated_total = initial_estimate if not verbose else max_pages
+    # Variables for progress tracking
     last_update_time = time.time()
-    
-    # Track actual unique URLs found for progress bar
-    unique_urls_count = 0
+    progress_update_interval = 0.5  # seconds
     
     def process_url():
         nonlocal visited_count, estimated_total, last_update_time
@@ -497,18 +493,7 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None, v
                     
                     # Update progress bar
                     if not verbose and progress_bar:
-                        # Update the total estimate based on queue size of unique URLs
-                        current_time = time.time()
-                        if current_time - last_update_time > 0.5:  # Update more frequently (every 0.5 seconds)
-                            # Always update to at least the current count plus queue size
-                            new_estimate = max(len(visited_urls) + url_queue.qsize(), len(visited_urls) + 1)
-                            if new_estimate > estimated_total:
-                                estimated_total = new_estimate
-                                progress_bar.total = estimated_total
-                                progress_bar.refresh()
-                            last_update_time = current_time
-                        
-                        # Only update the progress bar if this is a new URL
+                        # Simply update the progress count without trying to estimate a total
                         progress_bar.update(1)
                 
                 if verbose:
@@ -624,18 +609,7 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None, v
                     for url in new_urls:
                         url_queue.put(url)
                         
-                        # Update estimated total when adding new URLs
-                        if not verbose and progress_bar and len(new_urls) > 5:  # Lower threshold to update more frequently
-                            with visited_lock:
-                                current_time = time.time()
-                                if current_time - last_update_time > 0.5:  # Update more frequently (every 0.5 seconds)
-                                    # Use the count of unique URLs (visited_urls) plus queue size
-                                    new_estimate = len(visited_urls) + url_queue.qsize()
-                                    if new_estimate > estimated_total:
-                                        estimated_total = new_estimate
-                                        progress_bar.total = estimated_total
-                                        progress_bar.refresh()
-                                        last_update_time = current_time
+                        # No need to update estimated total here
                         
                 except Exception as e:
                     if verbose:
@@ -675,8 +649,6 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None, v
     
     # Close progress bar if it exists
     if not verbose and progress_bar:
-        progress_bar.total = len(visited_urls)  # Set final total to actual unique URLs count
-        progress_bar.refresh()
         progress_bar.close()
         
     if verbose:
