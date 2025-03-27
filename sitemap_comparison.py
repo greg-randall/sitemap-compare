@@ -254,12 +254,19 @@ def get_sitemap_urls(sitemap_url):
 def normalize_url(url):
     """Normalize URL to avoid duplicates due to trivial differences."""
     parsed = urlparse(url)
+    
     # Remove trailing slash if present
     path = parsed.path
     if path.endswith('/') and path != '/':
         path = path[:-1]
+    elif not path:
+        path = '/'
+        
+    # Lowercase the domain
+    netloc = parsed.netloc.lower()
+    
     # Reconstruct URL without query parameters and fragments
-    return f"{parsed.scheme}://{parsed.netloc}{path}"
+    return f"{parsed.scheme}://{netloc}{path}"
 
 def is_valid_url(url):
     """Check if a URL is valid and should be included in results."""
