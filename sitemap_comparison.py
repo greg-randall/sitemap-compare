@@ -2,12 +2,15 @@ import argparse
 import re
 import signal
 import sys
+import concurrent.futures
 from urllib.parse import urlparse, urljoin
 import xml.etree.ElementTree as ET
 from curl_cffi import requests
 from bs4 import BeautifulSoup
 import logging
 import html
+import queue
+import threading
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -17,6 +20,8 @@ parser = argparse.ArgumentParser(description='Compare sitemap URLs with URLs fou
 parser.add_argument('start_url', help='The URL to start spidering from')
 parser.add_argument('--sitemap-url', help='The URL of the sitemap (optional, will try to discover if not provided)')
 parser.add_argument('--output-prefix', default='comparison_results', help='Prefix for output files')
+parser.add_argument('--workers', type=int, default=4, help='Number of parallel workers for spidering (default: 4)')
+parser.add_argument('--max-pages', type=int, default=10000, help='Maximum number of pages to spider (default: 10000)')
 args = parser.parse_args()
 
 # Global flag to track interruption
@@ -271,55 +276,111 @@ def is_valid_url(url):
         
     return True
 
-def spider_website(start_url, max_pages=10000):
-    """Spider a website and return all discovered URLs."""
+def spider_website(start_url, max_pages=10000, num_workers=4):
+    """Spider a website and return all discovered URLs using parallel workers."""
     global interrupted
     base_domain = urlparse(start_url).netloc
+    
+    # Use thread-safe collections
     visited_urls = set()
-    to_visit = {start_url}
     found_urls = set()
+    url_queue = queue.Queue()
+    url_queue.put(start_url)
     
-    logging.info(f"Starting to spider {start_url}")
+    # Locks for thread safety
+    visited_lock = threading.Lock()
+    found_lock = threading.Lock()
     
-    try:
-        while to_visit and len(visited_urls) < max_pages and not interrupted:
-            current_url = to_visit.pop()
-            
-            if current_url in visited_urls:
-                continue
-                
-            logging.info(f"Visiting {current_url} ({len(visited_urls)}/{max_pages})")
-            
+    # Counter for progress reporting
+    visited_count = 0
+    
+    logging.info(f"Starting to spider {start_url} with {num_workers} parallel workers")
+    
+    def process_url():
+        nonlocal visited_count
+        while not interrupted and visited_count < max_pages:
             try:
-                response = requests.get(current_url, timeout=10)
-                visited_urls.add(current_url)
-                found_urls.add(current_url)
-                
-                if 'text/html' not in response.headers.get('Content-Type', ''):
+                # Get URL with timeout to allow for interruption
+                try:
+                    current_url = url_queue.get(timeout=1)
+                except queue.Empty:
+                    # If queue is empty, check if all workers are idle
+                    if url_queue.empty():
+                        break
                     continue
-                    
-                soup = BeautifulSoup(response.text, 'html.parser')
                 
-                # Find all links
-                for link in soup.find_all('a', href=True):
-                    href = link['href']
-                    full_url = urljoin(current_url, href)
+                # Skip if already visited
+                with visited_lock:
+                    if current_url in visited_urls:
+                        url_queue.task_done()
+                        continue
+                    visited_urls.add(current_url)
+                    visited_count += 1
+                
+                logging.info(f"Visiting {current_url} ({visited_count}/{max_pages})")
+                
+                try:
+                    response = requests.get(current_url, timeout=10)
                     
-                    # Skip non-HTTP URLs, fragments, and external domains
-                    parsed_url = urlparse(full_url)
-                    if (parsed_url.scheme not in ('http', 'https') or 
-                        parsed_url.netloc != base_domain or 
-                        '#' in full_url):
+                    with found_lock:
+                        found_urls.add(current_url)
+                    
+                    if 'text/html' not in response.headers.get('Content-Type', ''):
+                        url_queue.task_done()
                         continue
                         
-                    # Remove fragments
-                    clean_url = full_url.split('#')[0]
+                    soup = BeautifulSoup(response.text, 'html.parser')
                     
-                    if clean_url not in visited_urls:
-                        to_visit.add(clean_url)
+                    # Find all links
+                    new_urls = []
+                    for link in soup.find_all('a', href=True):
+                        href = link['href']
+                        full_url = urljoin(current_url, href)
                         
+                        # Skip non-HTTP URLs, fragments, and external domains
+                        parsed_url = urlparse(full_url)
+                        if (parsed_url.scheme not in ('http', 'https') or 
+                            parsed_url.netloc != base_domain or 
+                            '#' in full_url):
+                            continue
+                            
+                        # Remove fragments
+                        clean_url = full_url.split('#')[0]
+                        
+                        with visited_lock:
+                            if clean_url not in visited_urls:
+                                new_urls.append(clean_url)
+                    
+                    # Add new URLs to the queue
+                    for url in new_urls:
+                        url_queue.put(url)
+                        
+                except Exception as e:
+                    logging.error(f"Error visiting {current_url}: {e}")
+                
+                url_queue.task_done()
+                
             except Exception as e:
-                logging.error(f"Error visiting {current_url}: {e}")
+                logging.error(f"Worker error: {e}")
+    
+    try:
+        # Create and start worker threads
+        with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
+            workers = [executor.submit(process_url) for _ in range(num_workers)]
+            
+            # Wait for all tasks to complete or for interruption
+            while not interrupted and visited_count < max_pages and not url_queue.empty():
+                # Check if all workers are done
+                if all(worker.done() for worker in workers):
+                    break
+                # Sleep briefly to avoid busy waiting
+                threading.Event().wait(0.1)
+            
+            # If interrupted, cancel remaining workers
+            if interrupted:
+                for worker in workers:
+                    worker.cancel()
+    
     except Exception as e:
         logging.error(f"Spidering error: {e}")
         
@@ -352,7 +413,7 @@ def main():
         logging.info(f"After filtering and normalization, found {len(sitemap_urls)} valid URLs in sitemap")
         
         # Get URLs from spidering
-        site_urls_raw = spider_website(args.start_url)
+        site_urls_raw = spider_website(args.start_url, max_pages=args.max_pages, num_workers=args.workers)
         
         # Filter and normalize site URLs
         site_urls = set()
