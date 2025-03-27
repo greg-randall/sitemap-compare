@@ -13,6 +13,7 @@ import queue
 import threading
 import os
 import datetime
+import time
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -345,7 +346,34 @@ def spider_website(start_url, max_pages=10000, num_workers=4):
                 logging.info(f"Visiting {current_url} ({visited_count}/{max_pages})")
                 
                 try:
-                    response = requests.get(current_url, timeout=10)
+                    # Implement exponential backoff for connection errors
+                    retry_delays = [1, 2, 4, 8, 16, 32]
+                    response = None
+                    last_error = None
+                    
+                    for retry, delay in enumerate(retry_delays):
+                        try:
+                            response = requests.get(current_url, timeout=10)
+                            break  # Success, exit retry loop
+                        except Exception as e:
+                            last_error = e
+                            error_message = str(e).lower()
+                            
+                            # Only retry for connection-related errors
+                            if any(err in error_message for err in [
+                                'connection reset', 'connection timed out', 'timeout', 
+                                'recv failure', 'operation timed out'
+                            ]):
+                                if retry < len(retry_delays) - 1:  # Don't log on last attempt
+                                    logging.warning(f"Connection error on {current_url}, retrying in {delay}s (attempt {retry+1}/{len(retry_delays)}): {e}")
+                                    time.sleep(delay)
+                                    continue
+                            # For non-connection errors or last retry, don't retry
+                            raise
+                    
+                    # If we exhausted all retries
+                    if response is None:
+                        raise last_error
                     
                     with found_lock:
                         found_urls.add(current_url)
