@@ -463,10 +463,14 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None, v
         logging.info(f"Starting to spider {start_url} with {num_workers} parallel workers")
     else:
         print(f"Spidering website: {start_url}")
-        progress_bar = tqdm(total=max_pages, desc="Pages crawled", unit="pages")
+        progress_bar = tqdm(total=max_pages, desc="Pages crawled", unit="pages", dynamic_ncols=True)
+    
+    # Add a variable to track the estimated total pages
+    estimated_total = max_pages
+    last_update_time = time.time()
     
     def process_url():
-        nonlocal visited_count
+        nonlocal visited_count, estimated_total, last_update_time
         while not interrupted and visited_count < max_pages:
             try:
                 # Get URL with timeout to allow for interruption
@@ -485,7 +489,22 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None, v
                         continue
                     visited_urls.add(current_url)
                     visited_count += 1
+                    
+                    # Update progress bar
                     if not verbose and progress_bar:
+                        # Update the total estimate based on queue size
+                        current_time = time.time()
+                        if current_time - last_update_time > 2:  # Update every 2 seconds
+                            new_estimate = visited_count + url_queue.qsize()
+                            if new_estimate > estimated_total:
+                                estimated_total = new_estimate
+                            elif visited_count > estimated_total * 0.9:  # If we're close to the end
+                                estimated_total = max(visited_count + 10, int(visited_count * 1.1))
+                            
+                            progress_bar.total = min(estimated_total, max_pages)
+                            progress_bar.refresh()
+                            last_update_time = current_time
+                        
                         progress_bar.update(1)
                 
                 if verbose:
@@ -601,6 +620,18 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None, v
                     for url in new_urls:
                         url_queue.put(url)
                         
+                        # Update estimated total when adding new URLs
+                        if not verbose and progress_bar and len(new_urls) > 10:
+                            with visited_lock:
+                                current_time = time.time()
+                                if current_time - last_update_time > 2:  # Limit update frequency
+                                    new_estimate = visited_count + url_queue.qsize()
+                                    if new_estimate > estimated_total:
+                                        estimated_total = new_estimate
+                                        progress_bar.total = min(estimated_total, max_pages)
+                                        progress_bar.refresh()
+                                        last_update_time = current_time
+                        
                 except Exception as e:
                     if verbose:
                         logging.error(f"Error visiting {current_url}: {e}")
@@ -639,6 +670,8 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None, v
     
     # Close progress bar if it exists
     if not verbose and progress_bar:
+        progress_bar.total = visited_count  # Set final total to actual count
+        progress_bar.refresh()
         progress_bar.close()
         
     if verbose:
