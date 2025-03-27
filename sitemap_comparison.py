@@ -169,15 +169,33 @@ def extract_urls_with_regex(content, base_url):
     logging.info(f"Regex extraction found {len(urls)} URLs")
     return urls
 
+def url_to_filename(url):
+    """Convert a URL to a valid filename."""
+    # Replace protocol separator
+    filename = url.replace('://', '_--')
+    # Replace other invalid characters
+    filename = filename.replace('/', '-').replace('\\', '-')
+    filename = filename.replace(':', '_').replace('*', '_')
+    filename = filename.replace('?', '_').replace('&', '_')
+    filename = filename.replace('"', '_').replace("'", '_')
+    filename = filename.replace('<', '_').replace('>', '_')
+    filename = filename.replace('|', '_').replace(' ', '_')
+    filename = filename.replace('#', '_').replace('%', '_')
+    filename = filename.replace('+', '_').replace('=', '_')
+    # Limit filename length to avoid issues with long paths
+    if len(filename) > 200:
+        filename = filename[:200]
+    return filename
+
 def get_cache_xml_filename(url, output_dir):
     """Generate a filename for caching a sitemap XML content."""
     if not output_dir:
         return None
         
-    # Create a hash of the URL to use as filename
-    url_hash = hashlib.md5(url.encode('utf-8')).hexdigest()
+    # Create a readable filename from the URL
+    filename = url_to_filename(url) + ".xml"
     cache_xml_dir = os.path.join(output_dir, "cache-xml")
-    return os.path.join(cache_xml_dir, f"{url_hash}.xml")
+    return os.path.join(cache_xml_dir, filename)
 
 def get_sitemap_urls(sitemap_url, output_dir=None):
     """Extract all URLs from a sitemap, handling different formats and recursion."""
@@ -368,9 +386,9 @@ def is_valid_url(url):
 
 def get_cache_filename(url, cache_dir):
     """Generate a filename for caching a URL's content."""
-    # Create a hash of the URL to use as filename
-    url_hash = hashlib.md5(url.encode('utf-8')).hexdigest()
-    return os.path.join(cache_dir, f"{url_hash}.html")
+    # Create a readable filename from the URL
+    filename = url_to_filename(url) + ".html"
+    return os.path.join(cache_dir, filename)
 
 def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None):
     """Spider a website and return all discovered URLs using parallel workers."""
@@ -608,8 +626,8 @@ def cache_missing_urls(urls, output_dir):
         logging.info(f"Caching URL {i+1}/{len(urls)}: {url}")
         
         # Generate cache filename
-        url_hash = hashlib.md5(url.encode('utf-8')).hexdigest()
-        cache_file = os.path.join(cache_xml_dir, f"{url_hash}.html")
+        filename = url_to_filename(url) + ".html"
+        cache_file = os.path.join(cache_xml_dir, filename)
         
         # Skip if already cached
         if os.path.exists(cache_file):
