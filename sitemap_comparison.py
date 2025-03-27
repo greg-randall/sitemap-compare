@@ -11,6 +11,8 @@ import logging
 import html
 import queue
 import threading
+import os
+import datetime
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -439,6 +441,22 @@ def spider_website(start_url, max_pages=10000, num_workers=4):
     logging.info(f"Spidering complete. Found {len(found_urls)} URLs")
     return found_urls
 
+def create_output_directory(start_url):
+    """Create a directory structure for output files based on the URL and timestamp."""
+    # Extract domain from URL
+    domain = urlparse(start_url).netloc
+    
+    # Create timestamp
+    now = datetime.datetime.now()
+    timestamp = now.strftime("%m-%d-%Y_%I-%M%p").lower()
+    
+    # Create directory structure
+    base_dir = os.path.join("sites", domain, timestamp)
+    os.makedirs(base_dir, exist_ok=True)
+    
+    logging.info(f"Created output directory: {base_dir}")
+    return base_dir
+
 def main():
     global interrupted
     try:
@@ -449,6 +467,9 @@ def main():
             if not sitemap_url:
                 logging.error("Could not discover sitemap. Please provide sitemap URL with --sitemap-url")
                 sys.exit(1)
+        
+        # Create output directory
+        output_dir = create_output_directory(args.start_url)
         
         # Get URLs from sitemap
         sitemap_urls_raw = get_sitemap_urls(sitemap_url)
@@ -481,18 +502,29 @@ def main():
         in_site_not_sitemap = site_urls - sitemap_urls
         in_sitemap_not_site = sitemap_urls - site_urls
         
-        # Write results to files
-        missing_from_sitemap_file = f"{args.output_prefix}_missing_from_sitemap.txt"
+        # Write results to files in the output directory
+        missing_from_sitemap_file = os.path.join(output_dir, "missing_from_sitemap.txt")
         with open(missing_from_sitemap_file, 'w') as f:
             for url in sorted(in_site_not_sitemap):
                 f.write(f"{url}\n")
         logging.info(f"Wrote {len(in_site_not_sitemap)} URLs missing from sitemap to {missing_from_sitemap_file}")
         
-        missing_from_site_file = f"{args.output_prefix}_missing_from_site.txt"
+        missing_from_site_file = os.path.join(output_dir, "missing_from_site.txt")
         with open(missing_from_site_file, 'w') as f:
             for url in sorted(in_sitemap_not_site):
                 f.write(f"{url}\n")
         logging.info(f"Wrote {len(in_sitemap_not_site)} URLs missing from site to {missing_from_site_file}")
+        
+        # Write all URLs to files for reference
+        all_sitemap_urls_file = os.path.join(output_dir, "all_sitemap_urls.txt")
+        with open(all_sitemap_urls_file, 'w') as f:
+            for url in sorted(sitemap_urls):
+                f.write(f"{url}\n")
+        
+        all_site_urls_file = os.path.join(output_dir, "all_site_urls.txt")
+        with open(all_site_urls_file, 'w') as f:
+            for url in sorted(site_urls):
+                f.write(f"{url}\n")
         
         logging.info("Comparison complete!")
     except Exception as e:
