@@ -586,6 +586,59 @@ def create_output_directory(start_url):
     logging.info(f"Created output directory: {base_dir}")
     return base_dir
 
+def cache_missing_urls(urls, output_dir):
+    """Fetch and cache URLs that are in the sitemap but not found by spidering."""
+    if not urls:
+        logging.info("No missing URLs to cache")
+        return
+        
+    cache_xml_dir = os.path.join(output_dir, "cache-xml")
+    os.makedirs(cache_xml_dir, exist_ok=True)
+    
+    logging.info(f"Caching {len(urls)} URLs found in sitemap but not in site spider")
+    
+    # Retry delays for exponential backoff
+    retry_delays = [1, 2, 4, 8, 16, 32]
+    
+    for i, url in enumerate(sorted(urls)):
+        if interrupted:
+            logging.info("Caching interrupted. Exiting...")
+            break
+            
+        logging.info(f"Caching URL {i+1}/{len(urls)}: {url}")
+        
+        # Generate cache filename
+        url_hash = hashlib.md5(url.encode('utf-8')).hexdigest()
+        cache_file = os.path.join(cache_xml_dir, f"{url_hash}.html")
+        
+        # Skip if already cached
+        if os.path.exists(cache_file):
+            logging.info(f"URL already cached: {url}")
+            continue
+            
+        # Fetch with retry
+        for retry, delay in enumerate(retry_delays):
+            try:
+                response = requests.get(url, timeout=10)
+                
+                # Cache the content
+                with open(cache_file, 'w', encoding='utf-8') as f:
+                    f.write(response.text)
+                logging.info(f"Successfully cached: {url}")
+                break
+            except Exception as e:
+                error_message = str(e).lower()
+                if any(err in error_message for err in [
+                    'connection reset', 'connection timed out', 'timeout', 
+                    'recv failure', 'operation timed out'
+                ]):
+                    if retry < len(retry_delays) - 1:
+                        logging.warning(f"Connection error caching {url}, retrying in {delay}s (attempt {retry+1}/{len(retry_delays)}): {e}")
+                        time.sleep(delay)
+                        continue
+                logging.error(f"Failed to cache {url}: {e}")
+                break
+
 def main():
     global interrupted
     try:
@@ -643,6 +696,9 @@ def main():
             for url in sorted(in_sitemap_not_site):
                 f.write(f"{url}\n")
         logging.info(f"Wrote {len(in_sitemap_not_site)} URLs missing from site to {missing_from_site_file}")
+        
+        # Cache pages that are in sitemap but not found by site spider
+        cache_missing_urls(in_sitemap_not_site, output_dir)
         
         # Write all URLs to files for reference
         all_sitemap_urls_file = os.path.join(output_dir, "all_sitemap_urls.txt")
