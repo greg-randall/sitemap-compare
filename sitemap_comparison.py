@@ -14,6 +14,7 @@ import threading
 import os
 import datetime
 import time
+import hashlib
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -333,7 +334,13 @@ def is_valid_url(url):
         
     return True
 
-def spider_website(start_url, max_pages=10000, num_workers=4):
+def get_cache_filename(url, cache_dir):
+    """Generate a filename for caching a URL's content."""
+    # Create a hash of the URL to use as filename
+    url_hash = hashlib.md5(url.encode('utf-8')).hexdigest()
+    return os.path.join(cache_dir, f"{url_hash}.html")
+
+def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None):
     """Spider a website and return all discovered URLs using parallel workers."""
     global interrupted
     base_domain = urlparse(start_url).netloc
@@ -350,6 +357,12 @@ def spider_website(start_url, max_pages=10000, num_workers=4):
     
     # Counter for progress reporting
     visited_count = 0
+    
+    # Set up cache directory if output_dir is provided
+    cache_dir = None
+    if output_dir:
+        cache_dir = os.path.join(output_dir, "cache")
+        os.makedirs(cache_dir, exist_ok=True)
     
     logging.info(f"Starting to spider {start_url} with {num_workers} parallel workers")
     
@@ -411,8 +424,19 @@ def spider_website(start_url, max_pages=10000, num_workers=4):
                     
                     # Skip non-HTML content types and binary files
                     content_type = response.headers.get('Content-Type', '').lower()
-                    if ('text/html' not in content_type and 
-                        'application/xhtml+xml' not in content_type):
+                    is_html = ('text/html' in content_type or 'application/xhtml+xml' in content_type)
+                    
+                    # Cache the content if it's HTML and we have a cache directory
+                    if is_html and cache_dir:
+                        try:
+                            cache_file = get_cache_filename(current_url, cache_dir)
+                            with open(cache_file, 'w', encoding='utf-8') as f:
+                                f.write(response.text)
+                            logging.debug(f"Cached content for {current_url}")
+                        except Exception as e:
+                            logging.warning(f"Failed to cache content for {current_url}: {e}")
+                    
+                    if not is_html:
                         url_queue.task_done()
                         continue
                         
@@ -520,6 +544,10 @@ def create_output_directory(start_url):
     base_dir = os.path.join("sites", domain, timestamp)
     os.makedirs(base_dir, exist_ok=True)
     
+    # Create cache directory
+    cache_dir = os.path.join(base_dir, "cache")
+    os.makedirs(cache_dir, exist_ok=True)
+    
     logging.info(f"Created output directory: {base_dir}")
     return base_dir
 
@@ -549,7 +577,7 @@ def main():
         logging.info(f"After filtering and normalization, found {len(sitemap_urls)} valid URLs in sitemap")
         
         # Get URLs from spidering
-        site_urls_raw = spider_website(args.start_url, max_pages=args.max_pages, num_workers=args.workers)
+        site_urls_raw = spider_website(args.start_url, max_pages=args.max_pages, num_workers=args.workers, output_dir=output_dir)
         
         # Filter and normalize site URLs
         site_urls = set()
