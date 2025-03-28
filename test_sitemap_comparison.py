@@ -32,20 +32,22 @@ class TestSitemapComparison(unittest.TestCase):
         shutil.rmtree(self.test_dir)
     
     @patch('sitemap_comparison.requests.get')
-    def test_discover_sitemap_url(self, mock_get):
+    @patch('sitemap_comparison.logging.error')  # Add this to suppress the error log
+    @patch('sitemap_comparison.logging.info')   # Add this to suppress info logs
+    def test_discover_sitemap_url(self, mock_info, mock_error, mock_get):
         # Mock response for robots.txt with sitemap
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.text = "User-agent: *\nDisallow: /admin\nSitemap: https://example.com/sitemap.xml"
         mock_get.return_value = mock_response
-        
+    
         # Test discovery from robots.txt
         result = discover_sitemap_url("https://example.com", self.test_dir, True)
         self.assertEqual(result, "https://example.com/sitemap.xml")
-        
+    
         # Mock response for robots.txt without sitemap
         mock_response.text = "User-agent: *\nDisallow: /admin"
-        
+    
         # Mock response for common sitemap locations
         def side_effect(url, timeout=10):
             if url == "https://example.com/robots.txt":
@@ -62,17 +64,20 @@ class TestSitemapComparison(unittest.TestCase):
                 response = MagicMock()
                 response.status_code = 404
                 return response
-                
+            
         mock_get.side_effect = side_effect
-        
+    
         # Test discovery from common locations
         result = discover_sitemap_url("https://example.com", self.test_dir, True)
         self.assertEqual(result, "https://example.com/sitemap.xml")
-        
+    
         # Test when no sitemap is found
         mock_get.side_effect = lambda url, timeout=10: MagicMock(status_code=404)
         result = discover_sitemap_url("https://example.com", self.test_dir, True)
         self.assertIsNone(result)
+    
+        # Verify that the error was logged
+        mock_error.assert_called_with("Could not automatically discover sitemap")
     
     def test_extract_urls_with_regex(self):
         # Test extracting URLs from sitemap XML
@@ -128,7 +133,9 @@ class TestSitemapComparison(unittest.TestCase):
                          "https_--example.com-page_fragment")
     
     @patch('sitemap_comparison.requests.get')
-    def test_get_sitemap_urls(self, mock_get):
+    @patch('sitemap_comparison.logging.error')  # Suppress error logs
+    @patch('sitemap_comparison.logging.info')   # Suppress info logs
+    def test_get_sitemap_urls(self, mock_info, mock_error, mock_get):
         # Test 1: Simple sitemap
         simple_response = MagicMock()
         simple_response.status_code = 200
@@ -197,7 +204,10 @@ class TestSitemapComparison(unittest.TestCase):
         self.assertEqual(sources["https://example.com/page2"], "https://example.com/sitemap2.xml")
     
     @patch('sitemap_comparison.requests.get')
-    def test_spider_website(self, mock_get):
+    @patch('sitemap_comparison.logging.error')  # Suppress error logs
+    @patch('sitemap_comparison.logging.info')   # Suppress info logs
+    @patch('sitemap_comparison.logging.warning')  # Suppress warning logs
+    def test_spider_website(self, mock_warning, mock_info, mock_error, mock_get):
         # Mock responses for spidering
         def side_effect(url, timeout=10):
             if url == "https://example.com":
@@ -272,7 +282,9 @@ class TestSitemapComparison(unittest.TestCase):
         self.assertEqual(sources["https://example.com/page4"], "https://example.com/page2")
     
     @patch('sitemap_comparison.requests.get')
-    def test_csv_output_format(self, mock_get):
+    @patch('sitemap_comparison.logging.error')  # Suppress error logs
+    @patch('sitemap_comparison.logging.info')   # Suppress info logs
+    def test_csv_output_format(self, mock_info, mock_error, mock_get):
         # Create a temporary directory for output
         with tempfile.TemporaryDirectory() as temp_dir:
             # Mock sitemap URLs
