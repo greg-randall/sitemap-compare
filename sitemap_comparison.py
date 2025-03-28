@@ -475,12 +475,12 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None, v
     
     # Progress bar for non-verbose mode
     progress_bar = None
+    # Start with a small initial estimate
+    initial_estimate = 10
     if verbose:
         logging.info(f"Starting to spider {start_url} with {num_workers} parallel workers")
     else:
         print(f"Spidering website: {start_url}")
-        # Start with a small initial estimate
-        initial_estimate = 10
         progress_bar = tqdm(total=initial_estimate, desc="Pages crawled", unit="pages", dynamic_ncols=True)
     
     # Variables for progress tracking
