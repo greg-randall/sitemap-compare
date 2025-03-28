@@ -29,6 +29,8 @@ parser.add_argument('--output-prefix', default='comparison_results', help='Prefi
 parser.add_argument('--workers', type=int, default=4, help='Number of parallel workers for spidering (default: 4)')
 parser.add_argument('--max-pages', type=int, default=10000, help='Maximum number of pages to spider (default: 10000)')
 parser.add_argument('--verbose', action='store_true', help='Enable verbose logging output')
+parser.add_argument('--compare-previous', action='store_true', 
+                    help='Compare results with the most recent previous scan of the same site')
 args = parser.parse_args()
 
 # Set logging level based on verbose flag
@@ -695,6 +697,71 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None, v
         print(f"Spidering complete. Found {len(found_urls)} URLs")
     return found_urls, url_sources
 
+def find_previous_scan(current_dir, domain):
+    """Find the most recent previous scan directory for the given domain."""
+    sites_dir = os.path.join("sites", domain)
+    if not os.path.exists(sites_dir):
+        return None
+        
+    # Get all timestamp directories for this domain
+    timestamp_dirs = []
+    for dirname in os.listdir(sites_dir):
+        dir_path = os.path.join(sites_dir, dirname)
+        if os.path.isdir(dir_path) and dir_path != current_dir:
+            # Check if this directory has the required CSV files
+            if (os.path.exists(os.path.join(dir_path, "missing_from_site.csv")) and
+                os.path.exists(os.path.join(dir_path, "missing_from_sitemap.csv"))):
+                timestamp_dirs.append(dir_path)
+    
+    if not timestamp_dirs:
+        return None
+        
+    # Sort by modification time (most recent first)
+    timestamp_dirs.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+    return timestamp_dirs[0]
+
+def compare_csv_files(current_file, previous_file, output_file, verbose=False):
+    """Compare two CSV files and write differences to output file."""
+    # Read current CSV
+    current_urls = set()
+    with open(current_file, 'r', newline='') as f:
+        reader = csv.reader(f)
+        next(reader)  # Skip header
+        for row in reader:
+            if len(row) >= 2:
+                current_urls.add(row[1])  # URL is in second column
+    
+    # Read previous CSV
+    previous_urls = set()
+    with open(previous_file, 'r', newline='') as f:
+        reader = csv.reader(f)
+        next(reader)  # Skip header
+        for row in reader:
+            if len(row) >= 2:
+                previous_urls.add(row[1])  # URL is in second column
+    
+    # Find new and fixed issues
+    new_issues = current_urls - previous_urls
+    fixed_issues = previous_urls - current_urls
+    
+    # Write comparison results
+    with open(output_file, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(["Status", "URL"])
+        
+        for url in sorted(new_issues):
+            writer.writerow(["New", url])
+            
+        for url in sorted(fixed_issues):
+            writer.writerow(["Fixed", url])
+    
+    if verbose:
+        logging.info(f"Comparison found {len(new_issues)} new issues and {len(fixed_issues)} fixed issues")
+    else:
+        print(f"Comparison found {len(new_issues)} new issues and {len(fixed_issues)} fixed issues")
+    
+    return len(new_issues), len(fixed_issues)
+
 def create_output_directory(start_url):
     """Create a directory structure for output files based on the URL and timestamp."""
     # Extract domain from URL
@@ -894,6 +961,45 @@ def main():
             writer.writerow(["Source", "URL"])
             for url in sorted(site_urls):
                 writer.writerow([normalized_site_sources.get(url, args.start_url), url])
+        
+        # Compare with previous scan if requested
+        if args.compare_previous:
+            domain = urlparse(args.start_url).netloc
+            previous_dir = find_previous_scan(output_dir, domain)
+            
+            if previous_dir:
+                if verbose:
+                    logging.info(f"Comparing with previous scan: {previous_dir}")
+                else:
+                    print(f"\nComparing with previous scan: {os.path.basename(previous_dir)}")
+                
+                # Compare missing from site
+                current_missing_site = os.path.join(output_dir, "missing_from_site.csv")
+                previous_missing_site = os.path.join(previous_dir, "missing_from_site.csv")
+                comparison_missing_site = os.path.join(output_dir, "comparison_missing_from_site.csv")
+                
+                new_missing_site, fixed_missing_site = compare_csv_files(
+                    current_missing_site, previous_missing_site, comparison_missing_site, verbose)
+                
+                # Compare missing from sitemap
+                current_missing_sitemap = os.path.join(output_dir, "missing_from_sitemap.csv")
+                previous_missing_sitemap = os.path.join(previous_dir, "missing_from_sitemap.csv")
+                comparison_missing_sitemap = os.path.join(output_dir, "comparison_missing_from_sitemap.csv")
+                
+                new_missing_sitemap, fixed_missing_sitemap = compare_csv_files(
+                    current_missing_sitemap, previous_missing_sitemap, comparison_missing_sitemap, verbose)
+                
+                if verbose:
+                    logging.info("Comparison with previous scan complete")
+                else:
+                    print("\nComparison with previous scan complete")
+                    print(f"Missing from site: {new_missing_site} new, {fixed_missing_site} fixed")
+                    print(f"Missing from sitemap: {new_missing_sitemap} new, {fixed_missing_sitemap} fixed")
+            else:
+                if verbose:
+                    logging.warning("No previous scan found for comparison")
+                else:
+                    print("\nNo previous scan found for comparison")
         
         if verbose:
             logging.info("Comparison complete!")

@@ -16,7 +16,9 @@ from sitemap_comparison import (
     is_valid_url,
     get_sitemap_urls,
     spider_website,
-    url_to_filename
+    url_to_filename,
+    find_previous_scan,
+    compare_csv_files
 )
 
 class TestSitemapComparison(unittest.TestCase):
@@ -284,6 +286,78 @@ class TestSitemapComparison(unittest.TestCase):
     @patch('sitemap_comparison.requests.get')
     @patch('sitemap_comparison.logging.error')  # Suppress error logs
     @patch('sitemap_comparison.logging.info')   # Suppress info logs
+    def test_compare_csv_files(self, mock_info, mock_error, mock_get):
+        # Create temporary CSV files for testing
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create current CSV
+            current_file = os.path.join(temp_dir, "current.csv")
+            with open(current_file, 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(["Source", "URL"])
+                writer.writerow(["https://example.com", "https://example.com/page1"])
+                writer.writerow(["https://example.com", "https://example.com/page2"])
+                writer.writerow(["https://example.com", "https://example.com/page3"])
+            
+            # Create previous CSV
+            previous_file = os.path.join(temp_dir, "previous.csv")
+            with open(previous_file, 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(["Source", "URL"])
+                writer.writerow(["https://example.com", "https://example.com/page1"])
+                writer.writerow(["https://example.com", "https://example.com/page4"])
+            
+            # Create output file
+            output_file = os.path.join(temp_dir, "comparison.csv")
+            
+            # Compare files
+            new_issues, fixed_issues = compare_csv_files(current_file, previous_file, output_file, True)
+            
+            # Check results
+            self.assertEqual(new_issues, 2)  # page2 and page3 are new
+            self.assertEqual(fixed_issues, 1)  # page4 is fixed
+            
+            # Check output file content
+            with open(output_file, 'r', newline='') as f:
+                reader = csv.reader(f)
+                rows = list(reader)
+                
+                self.assertEqual(rows[0], ["Status", "URL"])
+                self.assertEqual(rows[1], ["New", "https://example.com/page2"])
+                self.assertEqual(rows[2], ["New", "https://example.com/page3"])
+                self.assertEqual(rows[3], ["Fixed", "https://example.com/page4"])
+    
+    @patch('sitemap_comparison.os.path.exists')
+    @patch('sitemap_comparison.os.path.isdir')
+    @patch('sitemap_comparison.os.listdir')
+    @patch('sitemap_comparison.os.path.getmtime')
+    def test_find_previous_scan(self, mock_getmtime, mock_listdir, mock_isdir, mock_exists):
+        # Mock directory structure
+        mock_listdir.return_value = ["scan1", "scan2", "scan3"]
+        mock_isdir.return_value = True
+        
+        # Mock file existence checks
+        def exists_side_effect(path):
+            return "scan2" in path or "scan3" in path
+        mock_exists.side_effect = exists_side_effect
+        
+        # Mock modification times
+        def getmtime_side_effect(path):
+            if "scan2" in path:
+                return 1000  # older
+            elif "scan3" in path:
+                return 2000  # newer
+            return 0
+        mock_getmtime.side_effect = getmtime_side_effect
+        
+        # Test finding the most recent scan
+        result = find_previous_scan("/current/path", "example.com")
+        self.assertEqual(result, os.path.join("sites", "example.com", "scan3"))
+        
+        # Test when no previous scans exist
+        mock_exists.side_effect = lambda path: False
+        result = find_previous_scan("/current/path", "example.com")
+        self.assertIsNone(result)
+    
     def test_csv_output_format(self, mock_info, mock_error, mock_get):
         # Create a temporary directory for output
         with tempfile.TemporaryDirectory() as temp_dir:
