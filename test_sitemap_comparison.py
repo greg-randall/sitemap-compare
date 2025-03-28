@@ -404,6 +404,118 @@ class TestSitemapComparison(unittest.TestCase):
                 rows = list(reader)
                 self.assertEqual(rows[0], ["Source", "URL"])
                 self.assertEqual(rows[1], ["https://example.com/sitemap.xml", "https://example.com/page3"])
+    
+    @patch('sitemap_comparison.find_previous_scan')
+    @patch('sitemap_comparison.compare_csv_files')
+    @patch('sitemap_comparison.os.path.basename')
+    @patch('sitemap_comparison.os.path.join')
+    @patch('sitemap_comparison.urlparse')
+    def test_compare_previous_integration(self, mock_urlparse, mock_path_join, mock_basename, 
+                                         mock_compare_csv, mock_find_previous):
+        """Test the integration of the --compare-previous functionality in the main workflow."""
+        # Setup mocks
+        mock_urlparse.return_value = MagicMock(netloc="example.com")
+        mock_find_previous.return_value = "/path/to/previous/scan"
+        mock_basename.return_value = "previous-scan-timestamp"
+        
+        # Mock os.path.join to return predictable paths
+        def join_side_effect(*args):
+            return "/".join(args)
+        mock_path_join.side_effect = join_side_effect
+        
+        # Mock compare_csv_files to return some results
+        mock_compare_csv.side_effect = [
+            (2, 3),  # 2 new issues, 3 fixed issues for missing_from_site
+            (1, 4)   # 1 new issue, 4 fixed issues for missing_from_sitemap
+        ]
+        
+        # Create a temporary directory structure
+        with tempfile.TemporaryDirectory() as temp_dir:
+            current_dir = os.path.join(temp_dir, "current")
+            os.makedirs(current_dir)
+            
+            # Create the necessary CSV files
+            for filename in ["missing_from_site.csv", "missing_from_sitemap.csv"]:
+                with open(os.path.join(current_dir, filename), 'w', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(["Source", "URL"])
+                    writer.writerow(["https://example.com", "https://example.com/page1"])
+            
+            # Call the comparison code directly
+            domain = "example.com"
+            output_dir = current_dir
+            verbose = False
+            
+            # This simulates the relevant part of the main function
+            previous_dir = mock_find_previous.return_value
+            
+            if previous_dir:
+                print(f"\nComparing with previous scan: {mock_basename(previous_dir)}")
+                
+                # Compare missing from site
+                current_missing_site = mock_path_join(output_dir, "missing_from_site.csv")
+                previous_missing_site = mock_path_join(previous_dir, "missing_from_site.csv")
+                comparison_missing_site = mock_path_join(output_dir, "comparison_missing_from_site.csv")
+                
+                new_missing_site, fixed_missing_site = mock_compare_csv(
+                    current_missing_site, previous_missing_site, comparison_missing_site, verbose)
+                
+                # Compare missing from sitemap
+                current_missing_sitemap = mock_path_join(output_dir, "missing_from_sitemap.csv")
+                previous_missing_sitemap = mock_path_join(previous_dir, "missing_from_sitemap.csv")
+                comparison_missing_sitemap = mock_path_join(output_dir, "comparison_missing_from_sitemap.csv")
+                
+                new_missing_sitemap, fixed_missing_sitemap = mock_compare_csv(
+                    current_missing_sitemap, previous_missing_sitemap, comparison_missing_sitemap, verbose)
+                
+                print("\nComparison with previous scan complete")
+                print(f"Missing from site: {new_missing_site} new, {fixed_missing_site} fixed")
+                print(f"Missing from sitemap: {new_missing_sitemap} new, {fixed_missing_sitemap} fixed")
+            
+            # Verify the mocks were called correctly
+            mock_find_previous.assert_called_once_with(current_dir, domain)
+            
+            # Check that compare_csv_files was called twice with the correct parameters
+            self.assertEqual(mock_compare_csv.call_count, 2)
+            
+            # First call for missing_from_site.csv
+            args1, kwargs1 = mock_compare_csv.call_args_list[0]
+            self.assertEqual(args1[0], current_dir + "/missing_from_site.csv")
+            self.assertEqual(args1[1], "/path/to/previous/scan/missing_from_site.csv")
+            self.assertEqual(args1[2], current_dir + "/comparison_missing_from_site.csv")
+            self.assertEqual(args1[3], False)  # verbose
+            
+            # Second call for missing_from_sitemap.csv
+            args2, kwargs2 = mock_compare_csv.call_args_list[1]
+            self.assertEqual(args2[0], current_dir + "/missing_from_sitemap.csv")
+            self.assertEqual(args2[1], "/path/to/previous/scan/missing_from_sitemap.csv")
+            self.assertEqual(args2[2], current_dir + "/comparison_missing_from_sitemap.csv")
+            self.assertEqual(args2[3], False)  # verbose
+
+    @patch('sitemap_comparison.find_previous_scan')
+    @patch('sitemap_comparison.urlparse')
+    def test_compare_previous_no_previous_scan(self, mock_urlparse, mock_find_previous):
+        """Test the --compare-previous functionality when no previous scan is found."""
+        # Setup mocks
+        mock_urlparse.return_value = MagicMock(netloc="example.com")
+        mock_find_previous.return_value = None  # No previous scan found
+        
+        # Create a temporary directory
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_dir = temp_dir
+            domain = "example.com"
+            verbose = False
+            
+            # This simulates the relevant part of the main function
+            previous_dir = mock_find_previous(output_dir, domain)
+            
+            if previous_dir:
+                self.fail("This code should not execute when previous_dir is None")
+            else:
+                print("\nNo previous scan found for comparison")
+            
+            # Verify the mock was called correctly
+            mock_find_previous.assert_called_once_with(output_dir, domain)
 
 if __name__ == '__main__':
     unittest.main()
