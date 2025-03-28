@@ -458,7 +458,7 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None, v
     found_urls = set()
     url_sources = {}  # Dictionary to track where each URL was found
     url_queue = queue.Queue()
-    url_queue.put(start_url)
+    url_queue.put((start_url, None))  # (url, source_url) tuple
     
     # Locks for thread safety
     visited_lock = threading.Lock()
@@ -493,7 +493,7 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None, v
             try:
                 # Get URL with timeout to allow for interruption
                 try:
-                    current_url = url_queue.get(timeout=1)
+                    current_url, source_url = url_queue.get(timeout=1)  # Get URL and its source
                 except queue.Empty:
                     # If queue is empty, check if all workers are idle
                     if url_queue.empty():
@@ -559,7 +559,11 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None, v
                     
                     with found_lock:
                         found_urls.add(current_url)
-                        url_sources[current_url] = current_url  # The URL is its own source
+                        # Set the source - if it's the start URL, it's its own source
+                        if source_url is None:
+                            url_sources[current_url] = current_url
+                        else:
+                            url_sources[current_url] = source_url
                     
                     # Skip non-HTML content types and binary files
                     content_type = response.headers.get('Content-Type', '').lower()
@@ -636,9 +640,9 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None, v
                                 if clean_url not in url_sources:
                                     url_sources[clean_url] = current_url
                     
-                    # Add new URLs to the queue
+                    # Add new URLs to the queue with current_url as their source
                     for url in new_urls:
-                        url_queue.put(url)
+                        url_queue.put((url, current_url))
                         
                         # No need to update estimated total here
                         
