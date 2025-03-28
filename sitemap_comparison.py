@@ -16,6 +16,7 @@ import datetime
 import time
 import hashlib
 from tqdm import tqdm
+import csv
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -227,6 +228,7 @@ def get_sitemap_urls(sitemap_url, output_dir=None, verbose=False):
     if verbose:
         logging.info(f"Fetching sitemap from {sitemap_url}")
     urls = set()
+    url_sources = {}  # Dictionary to track where each URL was found
     content = ""
     
     try:
@@ -259,19 +261,26 @@ def get_sitemap_urls(sitemap_url, output_dir=None, verbose=False):
                 if verbose:
                     logging.info(f"Found {len(sitemap_urls)} sub-sitemaps to process")
                 for sub_sitemap_url in sitemap_urls:
-                    sub_urls = get_sitemap_urls(sub_sitemap_url, output_dir, verbose)
+                    sub_urls, sub_sources = get_sitemap_urls(sub_sitemap_url, output_dir, verbose)
                     urls.update(sub_urls)
+                    url_sources.update(sub_sources)
                     
                 # Remove the sitemap URLs from the regular URLs
                 regular_urls = loc_urls - set(sitemap_urls)
                 urls.update(regular_urls)
+                # Track sources for regular URLs
+                for url in regular_urls:
+                    url_sources[url] = sitemap_url
             else:
                 urls.update(loc_urls)
+                # Track sources for all URLs
+                for url in loc_urls:
+                    url_sources[url] = sitemap_url
                 
             if urls:
                 if verbose:
                     logging.info(f"Successfully extracted URLs from sitemap, found {len(urls)} URLs")
-                return urls
+                return urls, url_sources
         
         # If regex extraction didn't work, try standard XML parsing
         if content.strip().startswith('<?xml') or '<urlset' in content or '<sitemapindex' in content:
@@ -293,20 +302,23 @@ def get_sitemap_urls(sitemap_url, output_dir=None, verbose=False):
                         logging.info(f"Found sitemap index with {len(sitemaps)} sitemaps")
                     for sitemap in sitemaps:
                         sub_sitemap_url = sitemap.text.strip()
-                        sub_urls = get_sitemap_urls(sub_sitemap_url, output_dir, verbose)
+                        sub_urls, sub_sources = get_sitemap_urls(sub_sitemap_url, output_dir, verbose)
                         urls.update(sub_urls)
+                        url_sources.update(sub_sources)
                 else:
                     # Regular sitemap
                     url_elements = (root.findall('.//sm:url/sm:loc', namespaces) or 
                                    root.findall('.//url/loc', {}))
                     
                     for url_element in url_elements:
-                        urls.add(url_element.text.strip())
+                        url = url_element.text.strip()
+                        urls.add(url)
+                        url_sources[url] = sitemap_url
                         
                 if urls:
                     if verbose:
                         logging.info(f"Successfully parsed XML sitemap, found {len(urls)} URLs")
-                    return urls
+                    return urls, url_sources
             except ET.ParseError as e:
                 if verbose:
                     logging.error(f"XML parsing error in sitemap {sitemap_url}: {e}")
@@ -360,7 +372,7 @@ def get_sitemap_urls(sitemap_url, output_dir=None, verbose=False):
         
         if verbose:
             logging.info(f"Found {len(urls)} URLs in sitemap {sitemap_url}")
-        return urls
+        return urls, url_sources
     except Exception as e:
         if verbose:
             logging.error(f"Error fetching sitemap {sitemap_url}: {e}")
@@ -372,10 +384,13 @@ def get_sitemap_urls(sitemap_url, output_dir=None, verbose=False):
             urls.update(regex_urls)
             if verbose:
                 logging.info(f"Regex extraction found {len(urls)} URLs after exception")
+            # Add sources for regex-extracted URLs
+            for url in regex_urls:
+                url_sources[url] = sitemap_url
         except Exception as regex_error:
             if verbose:
                 logging.error(f"Regex extraction also failed: {regex_error}")
-        return urls
+        return urls, url_sources
 
 def normalize_url(url):
     """Normalize URL to avoid duplicates due to trivial differences."""
@@ -441,6 +456,7 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None, v
     # Use thread-safe collections
     visited_urls = set()
     found_urls = set()
+    url_sources = {}  # Dictionary to track where each URL was found
     url_queue = queue.Queue()
     url_queue.put(start_url)
     
@@ -543,6 +559,7 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None, v
                     
                     with found_lock:
                         found_urls.add(current_url)
+                        url_sources[current_url] = current_url  # The URL is its own source
                     
                     # Skip non-HTML content types and binary files
                     content_type = response.headers.get('Content-Type', '').lower()
@@ -615,6 +632,9 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None, v
                         with visited_lock:
                             if clean_url not in visited_urls:
                                 new_urls.append(clean_url)
+                                # Track the source of this URL
+                                if clean_url not in url_sources:
+                                    url_sources[clean_url] = current_url
                     
                     # Add new URLs to the queue
                     for url in new_urls:
@@ -669,7 +689,7 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None, v
         logging.info(f"Spidering complete. Found {len(found_urls)} URLs")
     else:
         print(f"Spidering complete. Found {len(found_urls)} URLs")
-    return found_urls
+    return found_urls, url_sources
 
 def create_output_directory(start_url):
     """Create a directory structure for output files based on the URL and timestamp."""
@@ -786,13 +806,16 @@ def main():
         # Get URLs from sitemap
         if not verbose:
             print("Extracting URLs from sitemap...")
-        sitemap_urls_raw = get_sitemap_urls(sitemap_url, output_dir, verbose)
+        sitemap_urls_raw, sitemap_sources = get_sitemap_urls(sitemap_url, output_dir, verbose)
         
         # Filter and normalize sitemap URLs
         sitemap_urls = set()
+        normalized_sitemap_sources = {}  # Track sources for normalized URLs
         for url in sitemap_urls_raw:
             if is_valid_url(url):
-                sitemap_urls.add(normalize_url(url))
+                normalized_url = normalize_url(url)
+                sitemap_urls.add(normalized_url)
+                normalized_sitemap_sources[normalized_url] = sitemap_sources.get(url, sitemap_url)
         
         if verbose:
             logging.info(f"After filtering and normalization, found {len(sitemap_urls)} valid URLs in sitemap")
@@ -800,15 +823,18 @@ def main():
             print(f"Found {len(sitemap_urls)} valid URLs in sitemap")
         
         # Get URLs from spidering
-        site_urls_raw = spider_website(args.start_url, max_pages=args.max_pages, 
+        site_urls_raw, site_sources = spider_website(args.start_url, max_pages=args.max_pages, 
                                       num_workers=args.workers, output_dir=output_dir, 
                                       verbose=verbose)
         
         # Filter and normalize site URLs
         site_urls = set()
+        normalized_site_sources = {}  # Track sources for normalized URLs
         for url in site_urls_raw:
             if is_valid_url(url):
-                site_urls.add(normalize_url(url))
+                normalized_url = normalize_url(url)
+                site_urls.add(normalized_url)
+                normalized_site_sources[normalized_url] = site_sources.get(url, args.start_url)
                 
         if verbose:
             logging.info(f"After filtering and normalization, found {len(site_urls)} valid URLs from spidering")
@@ -824,20 +850,24 @@ def main():
         in_site_not_sitemap = site_urls - sitemap_urls
         in_sitemap_not_site = sitemap_urls - site_urls
         
-        # Write results to files in the output directory
-        missing_from_sitemap_file = os.path.join(output_dir, "missing_from_sitemap.txt")
-        with open(missing_from_sitemap_file, 'w') as f:
+        # Write results to CSV files in the output directory
+        missing_from_sitemap_file = os.path.join(output_dir, "missing_from_sitemap.csv")
+        with open(missing_from_sitemap_file, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(["Source", "URL"])
             for url in sorted(in_site_not_sitemap):
-                f.write(f"{url}\n")
+                writer.writerow([normalized_site_sources.get(url, args.start_url), url])
         if verbose:
             logging.info(f"Wrote {len(in_site_not_sitemap)} URLs missing from sitemap to {missing_from_sitemap_file}")
         else:
             print(f"Found {len(in_site_not_sitemap)} URLs missing from sitemap")
         
-        missing_from_site_file = os.path.join(output_dir, "missing_from_site.txt")
-        with open(missing_from_site_file, 'w') as f:
+        missing_from_site_file = os.path.join(output_dir, "missing_from_site.csv")
+        with open(missing_from_site_file, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(["Source", "URL"])
             for url in sorted(in_sitemap_not_site):
-                f.write(f"{url}\n")
+                writer.writerow([normalized_sitemap_sources.get(url, sitemap_url), url])
         if verbose:
             logging.info(f"Wrote {len(in_sitemap_not_site)} URLs missing from site to {missing_from_site_file}")
         else:
@@ -846,16 +876,20 @@ def main():
         # Cache pages that are in sitemap but not found by site spider
         cache_missing_urls(in_sitemap_not_site, output_dir, verbose)
         
-        # Write all URLs to files for reference
-        all_sitemap_urls_file = os.path.join(output_dir, "all_sitemap_urls.txt")
-        with open(all_sitemap_urls_file, 'w') as f:
+        # Write all URLs to CSV files for reference
+        all_sitemap_urls_file = os.path.join(output_dir, "all_sitemap_urls.csv")
+        with open(all_sitemap_urls_file, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(["Source", "URL"])
             for url in sorted(sitemap_urls):
-                f.write(f"{url}\n")
+                writer.writerow([normalized_sitemap_sources.get(url, sitemap_url), url])
         
-        all_site_urls_file = os.path.join(output_dir, "all_site_urls.txt")
-        with open(all_site_urls_file, 'w') as f:
+        all_site_urls_file = os.path.join(output_dir, "all_site_urls.csv")
+        with open(all_site_urls_file, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(["Source", "URL"])
             for url in sorted(site_urls):
-                f.write(f"{url}\n")
+                writer.writerow([normalized_site_sources.get(url, args.start_url), url])
         
         if verbose:
             logging.info("Comparison complete!")
