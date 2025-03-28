@@ -129,16 +129,18 @@ class TestSitemapComparison(unittest.TestCase):
     
     @patch('sitemap_comparison.requests.get')
     def test_get_sitemap_urls(self, mock_get):
-        # Mock response for a simple sitemap
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.text = """
+        # Test 1: Simple sitemap
+        simple_response = MagicMock()
+        simple_response.status_code = 200
+        simple_response.text = """
         <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
             <url><loc>https://example.com/page1</loc></url>
             <url><loc>https://example.com/page2</loc></url>
         </urlset>
         """
-        mock_get.return_value = mock_response
+        
+        # Configure the mock to return the simple sitemap response
+        mock_get.return_value = simple_response
         
         # Test simple sitemap
         urls, sources = get_sitemap_urls("https://example.com/sitemap.xml", self.test_dir, True)
@@ -146,15 +148,11 @@ class TestSitemapComparison(unittest.TestCase):
         self.assertEqual(sources["https://example.com/page1"], "https://example.com/sitemap.xml")
         self.assertEqual(sources["https://example.com/page2"], "https://example.com/sitemap.xml")
         
-        # Mock response for a sitemap index
-        mock_response.text = """
-        <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-            <sitemap><loc>https://example.com/sitemap1.xml</loc></sitemap>
-            <sitemap><loc>https://example.com/sitemap2.xml</loc></sitemap>
-        </sitemapindex>
-        """
+        # Test 2: Sitemap index with sub-sitemaps
+        # Reset the mock to use side_effect instead of return_value
+        mock_get.reset_mock()
         
-        # Mock responses for sub-sitemaps
+        # Define responses for different URLs
         def side_effect(url, timeout=10):
             if url == "https://example.com/sitemap.xml":
                 response = MagicMock()
@@ -184,7 +182,12 @@ class TestSitemapComparison(unittest.TestCase):
                 </urlset>
                 """
                 return response
+            else:
+                response = MagicMock()
+                response.status_code = 404
+                return response
                 
+        # Set the side_effect for the mock
         mock_get.side_effect = side_effect
         
         # Test sitemap index
