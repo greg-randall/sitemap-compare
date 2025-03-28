@@ -43,7 +43,7 @@ This tool helps you discover this hidden content by:
 
 2. Install dependencies:
    ```
-   pip install curl-cffi beautifulsoup4
+   pip install -r requirements.txt
    ```
 
 ## Usage
