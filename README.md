@@ -28,6 +28,7 @@ This tool helps you discover this hidden content by:
 - Caching of page content for offline analysis
 - Comprehensive logging for troubleshooting
 - Handles malformed XML with fallback parsing methods
+- Historical comparison to track changes between scans
 - Discovers content not intended for public visibility
 - Reveals the "dark corners" of websites that aren't in the sitemap
 - Identifies potential security issues through exposed but unlisted pages
@@ -72,6 +73,8 @@ python sitemap_comparison.py [-h] [--sitemap-url SITEMAP_URL] [--output-prefix O
 - `--output-prefix`: Prefix for output files (default: 'comparison_results')
 - `--workers`: Number of parallel workers for crawling (default: 4)
 - `--max-pages`: Maximum number of pages to crawl (default: 10000)
+- `--verbose`: Enable verbose logging output
+- `--compare-previous`: Compare results with the most recent previous scan of the same site
 
 ### Examples
 
@@ -88,6 +91,11 @@ python sitemap_comparison.py https://example.com --workers 8
 Limit the number of pages to crawl:
 ```
 python sitemap_comparison.py https://example.com --max-pages 1000
+```
+
+Compare with previous scan:
+```
+python sitemap_comparison.py https://example.com --compare-previous
 ```
 
 ## How It Works
