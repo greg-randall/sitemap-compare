@@ -337,6 +337,10 @@ class TestSitemapComparison(unittest.TestCase):
         
         # Mock file existence checks
         def exists_side_effect(path):
+            # First check if the sites directory exists
+            if "sites/example.com" in path:
+                return True
+                
             # Make sure both CSV files exist for scan2 and scan3
             if "scan2" in path or "scan3" in path:
                 if "missing_from_site.csv" in path or "missing_from_sitemap.csv" in path:
@@ -454,7 +458,8 @@ class TestSitemapComparison(unittest.TestCase):
             verbose = False
             
             # This simulates the relevant part of the main function
-            previous_dir = find_previous_scan(output_dir, domain)
+            # Use the mock instead of the actual function
+            previous_dir = mock_find_previous(output_dir, domain)
             
             if previous_dir:
                 print(f"\nComparing with previous scan: {mock_basename(previous_dir)}")
