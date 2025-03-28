@@ -337,7 +337,11 @@ class TestSitemapComparison(unittest.TestCase):
         
         # Mock file existence checks
         def exists_side_effect(path):
-            return "scan2" in path or "scan3" in path
+            # Make sure both CSV files exist for scan2 and scan3
+            if "scan2" in path or "scan3" in path:
+                if "missing_from_site.csv" in path or "missing_from_sitemap.csv" in path:
+                    return True
+            return False
         mock_exists.side_effect = exists_side_effect
         
         # Mock modification times
@@ -358,6 +362,9 @@ class TestSitemapComparison(unittest.TestCase):
         result = find_previous_scan("/current/path", "example.com")
         self.assertIsNone(result)
     
+    @patch('sitemap_comparison.requests.get')
+    @patch('sitemap_comparison.logging.error')  # Suppress error logs
+    @patch('sitemap_comparison.logging.info')   # Suppress info logs
     def test_csv_output_format(self, mock_info, mock_error, mock_get):
         # Create a temporary directory for output
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -447,7 +454,7 @@ class TestSitemapComparison(unittest.TestCase):
             verbose = False
             
             # This simulates the relevant part of the main function
-            previous_dir = mock_find_previous.return_value
+            previous_dir = find_previous_scan(output_dir, domain)
             
             if previous_dir:
                 print(f"\nComparing with previous scan: {mock_basename(previous_dir)}")
