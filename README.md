@@ -37,7 +37,7 @@ This tool helps you discover this hidden content by:
 
 1. Clone this repository:
    ```
-   git clone https://github.com/yourusername/sitemap-comparison.git
+   git clone https://github.com/greg-randall/sitemap-compare
    cd sitemap-comparison
    ```
 
