@@ -63,6 +63,7 @@ def discover_sitemap_url(base_url, output_dir=None, verbose=False):
     # Common sitemap locations to check
     potential_locations = [
         f"{base_domain}/sitemap.xml",
+        f"{base_domain}/sitemaps.xml",
         f"{base_domain}/sitemap_index.xml",
         f"{base_domain}/sitemap-index.xml",
         f"{base_domain}/sitemaps/sitemap.xml",
