@@ -31,6 +31,7 @@ parser.add_argument('--max-pages', type=int, default=10000, help='Maximum number
 parser.add_argument('--verbose', action='store_true', help='Enable verbose logging output')
 parser.add_argument('--compare-previous', action='store_true', default=True, help='Compare results with the most recent previous scan of the same site (default: True)')
 parser.add_argument('--ignore-pagination', action='store_true', help='Ignore common pagination URLs in the "missing from sitemap" report')
+parser.add_argument('--ignore-categories', action='store_true', help='Ignore WordPress category URLs in the "missing from sitemap" report')
 args = parser.parse_args()
 
 # Set logging level based on verbose flag
@@ -463,6 +464,25 @@ def is_pagination_url(url):
     ]
     
     for pattern in pagination_patterns:
+        if re.search(pattern, url):
+            return True
+    return False
+
+def is_category_url(url):
+    """Check if a URL appears to be a WordPress category URL."""
+    # Common WordPress category patterns
+    category_patterns = [
+        r'/category/[^/]+/?$',          # /category/garden/
+        r'/categories/[^/]+/?$',        # /categories/garden/
+        r'/cat/[^/]+/?$',               # /cat/garden/
+        r'\?cat=\d+$',                  # ?cat=5
+        r'\?category=[\w-]+$',          # ?category=garden
+        r'\?category_name=[\w-]+$',     # ?category_name=garden
+        r'/topics/[^/]+/?$',            # /topics/garden/
+        r'/subject/[^/]+/?$',           # /subject/garden/
+    ]
+    
+    for pattern in category_patterns:
         if re.search(pattern, url):
             return True
     return False
@@ -974,21 +994,31 @@ def main():
             sys.exit(0)
             
         # Find differences
+        filtered_site_urls = site_urls.copy()
+
+        # Apply pagination filtering if requested
         if args.ignore_pagination:
-            # Filter out pagination URLs from the "missing from sitemap" calculation
-            filtered_site_urls = set()
-            for url in site_urls:
-                if not is_pagination_url(url):
-                    filtered_site_urls.add(url)
+            before_count = len(filtered_site_urls)
+            filtered_site_urls = {url for url in filtered_site_urls if not is_pagination_url(url)}
+            pagination_filtered = before_count - len(filtered_site_urls)
             
             if verbose:
-                logging.info(f"After pagination filtering, {len(site_urls) - len(filtered_site_urls)} pagination URLs were ignored")
+                logging.info(f"Filtered out {pagination_filtered} pagination URLs")
             else:
-                print(f"Ignored {len(site_urls) - len(filtered_site_urls)} pagination URLs")
+                print(f"Ignored {pagination_filtered} pagination URLs")
+
+        # Apply category filtering if requested
+        if args.ignore_categories:
+            before_count = len(filtered_site_urls)
+            filtered_site_urls = {url for url in filtered_site_urls if not is_category_url(url)}
+            category_filtered = before_count - len(filtered_site_urls)
             
-            in_site_not_sitemap = filtered_site_urls - sitemap_urls
-        else:
-            in_site_not_sitemap = site_urls - sitemap_urls
+            if verbose:
+                logging.info(f"Filtered out {category_filtered} WordPress category URLs")
+            else:
+                print(f"Ignored {category_filtered} WordPress category URLs")
+                
+        in_site_not_sitemap = filtered_site_urls - sitemap_urls
             
         in_sitemap_not_site = sitemap_urls - site_urls
         
