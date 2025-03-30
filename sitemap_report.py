@@ -27,14 +27,21 @@ def parse_args():
                         help='Open the report in a web browser after generation')
     parser.add_argument('--output-dir', default='reports', 
                         help='Output directory for reports (default: reports)')
+    parser.add_argument('--verbose', action='store_true',
+                        help='Enable verbose output for debugging')
     return parser.parse_args()
 
-def generate_site_reports(output_dir="reports", open_browser=True):
+def generate_site_reports(output_dir="reports", open_browser=True, verbose=False):
     """Generate HTML reports for all sites in the sites directory."""
+    if verbose:
+        print(f"Starting report generation in directory: {output_dir}")
+        
     # Create the reports directory if it doesn't exist
     reports_dir = output_dir
     if os.path.exists(reports_dir):
         # Clean up old reports
+        if verbose:
+            print(f"Cleaning up existing reports directory: {reports_dir}")
         shutil.rmtree(reports_dir)
     os.makedirs(reports_dir, exist_ok=True)
     
@@ -220,15 +227,22 @@ def generate_site_reports(output_dir="reports", open_browser=True):
         if os.path.isdir(os.path.join(sites_dir, item)):
             domains.append(item)
     
+    if verbose:
+        print(f"Found {len(domains)} domains: {', '.join(domains)}")
+    
     if not domains:
         print("No domains found in the sites directory.")
         return
     
     # Generate the main index page
+    if verbose:
+        print("Generating main index page...")
     generate_main_index(reports_dir, domains)
     
     # Process each domain
     for domain in domains:
+        if verbose:
+            print(f"Processing domain: {domain}")
         domain_dir = os.path.join(sites_dir, domain)
         
         # Get all scan timestamps for this domain
@@ -240,23 +254,34 @@ def generate_site_reports(output_dir="reports", open_browser=True):
         # Sort timestamps chronologically
         timestamps.sort()
         
+        if verbose:
+            print(f"  Found {len(timestamps)} scans for {domain}")
+        
         if not timestamps:
+            if verbose:
+                print(f"  No scans found for {domain}, skipping")
             continue
         
         # Collect trend data
-        trend_data = collect_trend_data(domain_dir, timestamps)
+        if verbose:
+            print(f"  Collecting trend data for {domain}...")
+        trend_data = collect_trend_data(domain_dir, timestamps, verbose)
         
         # Generate domain index page
         domain_report_dir = os.path.join(reports_dir, domain)
         os.makedirs(domain_report_dir, exist_ok=True)
         
         # Generate the domain index page
+        if verbose:
+            print(f"  Generating index page for {domain}...")
         generate_domain_index(domain, domain_dir, domain_report_dir, timestamps, trend_data)
         
         # Process each scan (now using reversed timestamps for newest first)
         for timestamp in reversed(timestamps):
+            if verbose:
+                print(f"  Generating report for scan: {timestamp}")
             scan_dir = os.path.join(domain_dir, timestamp)
-            generate_scan_report(domain, timestamp, scan_dir, domain_report_dir)
+            generate_scan_report(domain, timestamp, scan_dir, domain_report_dir, verbose)
     
     # Open the main index in the browser if requested
     index_path = os.path.join(reports_dir, "index.html")
@@ -267,13 +292,16 @@ def generate_site_reports(output_dir="reports", open_browser=True):
         except:
             print("Could not open browser automatically.")
 
-def collect_trend_data(domain_dir, timestamps):
+def collect_trend_data(domain_dir, timestamps, verbose=False):
     """Collect trend data for all scans of a domain."""
     trend_data = {
         "labels": [],
         "missing_site": [],
         "missing_sitemap": []
     }
+    
+    if verbose:
+        print(f"    Collecting data from {len(timestamps)} timestamps")
     
     for timestamp in timestamps:
         # Parse timestamp for better labeling
@@ -477,8 +505,10 @@ def generate_domain_index(domain, domain_dir, domain_report_dir, timestamps, tre
         </html>
         """)
 
-def generate_scan_report(domain, timestamp, scan_dir, domain_report_dir):
+def generate_scan_report(domain, timestamp, scan_dir, domain_report_dir, verbose=False):
     """Generate the detailed report for a single scan."""
+    if verbose:
+        print(f"    Generating scan report for {domain} - {timestamp}")
     # Parse the timestamp
     try:
         dt = datetime.datetime.strptime(timestamp, "%m-%d-%Y_%I-%M%p")
@@ -885,4 +915,4 @@ def read_csv_data(file_path):
 
 if __name__ == "__main__":
     args = parse_args()
-    generate_site_reports(args.output_dir, args.open_browser)
+    generate_site_reports(args.output_dir, args.open_browser, args.verbose)
