@@ -30,6 +30,7 @@ parser.add_argument('--workers', type=int, default=4, help='Number of parallel w
 parser.add_argument('--max-pages', type=int, default=10000, help='Maximum number of pages to spider (default: 10000)')
 parser.add_argument('--verbose', action='store_true', help='Enable verbose logging output')
 parser.add_argument('--compare-previous', action='store_true', default=True, help='Compare results with the most recent previous scan of the same site (default: True)')
+parser.add_argument('--ignore-pagination', action='store_true', help='Ignore common pagination URLs in the "missing from sitemap" report')
 args = parser.parse_args()
 
 # Set logging level based on verbose flag
@@ -409,6 +410,30 @@ def normalize_url(url):
     
     # Reconstruct URL without query parameters and fragments
     return f"{parsed.scheme}://{netloc}{path}"
+
+def is_pagination_url(url):
+    """Check if a URL appears to be a pagination URL."""
+    # Common pagination patterns
+    pagination_patterns = [
+        r'/page/\d+/?$',           # /page/2/
+        r'/p/\d+/?$',              # /p/2/
+        r'/page-\d+/?$',           # /page-2/
+        r'/\d+/?$',                # /2/
+        r'\?page=\d+$',            # ?page=2
+        r'\?p=\d+$',               # ?p=2
+        r'\?pg=\d+$',              # ?pg=2
+        r'\?paged=\d+$',           # ?paged=2
+        r'\?offset=\d+$',          # ?offset=20
+        r'\?start=\d+$',           # ?start=10
+        r'\?from=\d+$',            # ?from=10
+        r'\?pg=\d+$',              # ?pg=2
+        r'\?[a-zA-Z0-9_-]+=\d+&page=\d+$',  # ?category=news&page=2
+    ]
+    
+    for pattern in pagination_patterns:
+        if re.search(pattern, url):
+            return True
+    return False
 
 def is_valid_url(url):
     """Check if a URL is valid and should be included in results."""
@@ -917,7 +942,22 @@ def main():
             sys.exit(0)
             
         # Find differences
-        in_site_not_sitemap = site_urls - sitemap_urls
+        if args.ignore_pagination:
+            # Filter out pagination URLs from the "missing from sitemap" calculation
+            filtered_site_urls = set()
+            for url in site_urls:
+                if not is_pagination_url(url):
+                    filtered_site_urls.add(url)
+            
+            if verbose:
+                logging.info(f"After pagination filtering, {len(site_urls) - len(filtered_site_urls)} pagination URLs were ignored")
+            else:
+                print(f"Ignored {len(site_urls) - len(filtered_site_urls)} pagination URLs")
+            
+            in_site_not_sitemap = filtered_site_urls - sitemap_urls
+        else:
+            in_site_not_sitemap = site_urls - sitemap_urls
+            
         in_sitemap_not_site = sitemap_urls - site_urls
         
         # Write results to CSV files in the output directory
