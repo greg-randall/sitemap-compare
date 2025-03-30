@@ -315,9 +315,21 @@ def collect_trend_data(domain_dir, timestamps, verbose=False):
         
         scan_dir = os.path.join(domain_dir, timestamp)
         
+        # Check for both CSV and TXT files
+        missing_site_file = os.path.join(scan_dir, "missing_from_site.csv")
+        if not os.path.exists(missing_site_file):
+            missing_site_file = os.path.join(scan_dir, "missing_from_site.txt")
+        
+        missing_sitemap_file = os.path.join(scan_dir, "missing_from_sitemap.csv")
+        if not os.path.exists(missing_sitemap_file):
+            missing_sitemap_file = os.path.join(scan_dir, "missing_from_sitemap.txt")
+        
         # Get counts
-        missing_site_count = count_csv_rows(os.path.join(scan_dir, "missing_from_site.csv"))
-        missing_sitemap_count = count_csv_rows(os.path.join(scan_dir, "missing_from_sitemap.csv"))
+        missing_site_count = count_csv_rows(missing_site_file, verbose)
+        missing_sitemap_count = count_csv_rows(missing_sitemap_file, verbose)
+        
+        if verbose:
+            print(f"    Timestamp {timestamp}: {missing_site_count} missing from site, {missing_sitemap_count} missing from sitemap")
         
         trend_data["missing_site"].append(missing_site_count)
         trend_data["missing_sitemap"].append(missing_sitemap_count)
@@ -516,12 +528,24 @@ def generate_scan_report(domain, timestamp, scan_dir, domain_report_dir, verbose
     except:
         formatted_date = timestamp
     
+    # Check for both CSV and TXT files
+    missing_site_file = os.path.join(scan_dir, "missing_from_site.csv")
+    if not os.path.exists(missing_site_file):
+        missing_site_file = os.path.join(scan_dir, "missing_from_site.txt")
+    
+    missing_sitemap_file = os.path.join(scan_dir, "missing_from_sitemap.csv")
+    if not os.path.exists(missing_sitemap_file):
+        missing_sitemap_file = os.path.join(scan_dir, "missing_from_sitemap.txt")
+    
+    if verbose:
+        print(f"      Using files: {missing_site_file} and {missing_sitemap_file}")
+    
     # Read the missing from site data
-    missing_site_data = read_csv_data(os.path.join(scan_dir, "missing_from_site.csv"))
+    missing_site_data = read_csv_data(missing_site_file, verbose)
     missing_site_count = len(missing_site_data)
     
     # Read the missing from sitemap data
-    missing_sitemap_data = read_csv_data(os.path.join(scan_dir, "missing_from_sitemap.csv"))
+    missing_sitemap_data = read_csv_data(missing_sitemap_file, verbose)
     missing_sitemap_count = len(missing_sitemap_data)
     
     # Check if comparison files exist
@@ -860,17 +884,37 @@ def generate_scan_report(domain, timestamp, scan_dir, domain_report_dir, verbose
         </html>
         """)
 
-def count_csv_rows(file_path):
-    """Count the number of data rows in a CSV file (excluding header)."""
+def count_csv_rows(file_path, verbose=False):
+    """Count the number of data rows in a CSV file or text file."""
     if not os.path.exists(file_path):
+        if verbose:
+            print(f"      File not found: {file_path}")
         return 0
     
     try:
         with open(file_path, 'r', newline='') as f:
-            reader = csv.reader(f)
-            # Skip header
-            next(reader, None)
-            return sum(1 for _ in reader)
+            # Try to read as CSV first
+            try:
+                reader = csv.reader(f)
+                # Skip header
+                next(reader, None)
+                count = sum(1 for _ in reader)
+                if verbose:
+                    print(f"      Counted {count} rows in CSV: {file_path}")
+                return count
+            except Exception:
+                # If CSV reading fails, try as a simple text file with URLs
+                if verbose:
+                    print(f"      Failed to count as CSV, trying as text file: {file_path}")
+                
+                # Reset file pointer to beginning
+                f.seek(0)
+                
+                # Count non-empty, non-comment lines
+                count = sum(1 for line in f if line.strip() and not line.strip().startswith('#'))
+                if verbose:
+                    print(f"      Counted {count} URLs in text file: {file_path}")
+                return count
     except Exception as e:
         print(f"Error counting rows in {file_path}: {e}")
         return 0
@@ -896,20 +940,46 @@ def count_comparison_csv(file_path):
     
     return new_count, fixed_count
 
-def read_csv_data(file_path):
+def read_csv_data(file_path, verbose=False):
     """Read a CSV file and return the data as a list of dictionaries."""
     data = []
     
     if not os.path.exists(file_path):
+        if verbose:
+            print(f"      File not found: {file_path}")
         return data
     
     try:
         with open(file_path, 'r', newline='') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                data.append(row)
+            # Try to read as CSV first
+            try:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    data.append(row)
+                
+                if verbose:
+                    print(f"      Read {len(data)} rows from CSV: {file_path}")
+                
+                return data
+            except Exception as csv_error:
+                # If CSV reading fails, try as a simple text file with URLs
+                if verbose:
+                    print(f"      Failed to read as CSV, trying as text file: {file_path}")
+                
+                # Reset file pointer to beginning
+                f.seek(0)
+                
+                # Read as text file with one URL per line
+                lines = f.readlines()
+                for line in lines:
+                    url = line.strip()
+                    if url and not url.startswith('#'):  # Skip empty lines and comments
+                        data.append({"URL": url, "Source": "Text file"})
+                
+                if verbose:
+                    print(f"      Read {len(data)} URLs from text file: {file_path}")
     except Exception as e:
-        print(f"Error reading CSV {file_path}: {e}")
+        print(f"Error reading file {file_path}: {e}")
     
     return data
 
