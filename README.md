@@ -65,7 +65,8 @@ The tool will:
 
 ```
 python sitemap_comparison.py [-h] [--sitemap-url SITEMAP_URL] [--output-prefix OUTPUT_PREFIX] 
-                            [--workers WORKERS] [--max-pages MAX_PAGES] start_url
+                            [--workers WORKERS] [--max-pages MAX_PAGES] [--verbose]
+                            [--compare-previous] [--ignore-pagination] start_url
 ```
 
 - `start_url`: The URL to start crawling from (required)
@@ -74,7 +75,8 @@ python sitemap_comparison.py [-h] [--sitemap-url SITEMAP_URL] [--output-prefix O
 - `--workers`: Number of parallel workers for crawling (default: 4)
 - `--max-pages`: Maximum number of pages to crawl (default: 10000)
 - `--verbose`: Enable verbose logging output
-- `--compare-previous`: Compare results with the most recent previous scan of the same site
+- `--compare-previous`: Compare results with the most recent previous scan of the same site (default: True)
+- `--ignore-pagination`: Ignore common pagination URLs in the "missing from sitemap" report
 
 ### Examples
 
@@ -96,6 +98,16 @@ python sitemap_comparison.py https://example.com --max-pages 1000
 Compare with previous scan:
 ```
 python sitemap_comparison.py https://example.com --compare-previous
+```
+
+Disable comparison with previous scan:
+```
+python sitemap_comparison.py https://example.com --compare-previous=False
+```
+
+Ignore pagination URLs in the missing from sitemap report:
+```
+python sitemap_comparison.py https://example.com --ignore-pagination
 ```
 
 ## How It Works
