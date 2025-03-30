@@ -1,6 +1,7 @@
 .aider*
 */*
 sites/
+reports/*
 *.7z
 *.zip
 *.csv

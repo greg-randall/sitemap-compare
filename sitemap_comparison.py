@@ -29,8 +29,7 @@ parser.add_argument('--output-prefix', default='comparison_results', help='Prefi
 parser.add_argument('--workers', type=int, default=4, help='Number of parallel workers for spidering (default: 4)')
 parser.add_argument('--max-pages', type=int, default=10000, help='Maximum number of pages to spider (default: 10000)')
 parser.add_argument('--verbose', action='store_true', help='Enable verbose logging output')
-parser.add_argument('--compare-previous', action='store_true', 
-                    help='Compare results with the most recent previous scan of the same site')
+parser.add_argument('--compare-previous', action='store_true', default=True, help='Compare results with the most recent previous scan of the same site (default: True)')
 args = parser.parse_args()
 
 # Set logging level based on verbose flag
