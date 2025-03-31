@@ -46,7 +46,7 @@ def generate_site_reports(output_dir="reports", open_browser=True, verbose=False
     os.makedirs(reports_dir, exist_ok=True)
     
     # Copy the CSS file to the reports directory
-    with open(os.path.join(reports_dir, "style.css"), "w") as f:
+    with open(os.path.join(reports_dir, "style.css"), "w", encoding="utf-8") as f:
         f.write("""
         /* Basic styles */
         body {
@@ -338,7 +338,7 @@ def collect_trend_data(domain_dir, timestamps, verbose=False):
 
 def generate_main_index(reports_dir, domains):
     """Generate the main index page listing all domains."""
-    with open(os.path.join(reports_dir, "index.html"), "w") as f:
+    with open(os.path.join(reports_dir, "index.html"), "w", encoding="utf-8") as f:
         f.write("""
         <!DOCTYPE html>
         <html lang="en">
@@ -380,7 +380,7 @@ def generate_main_index(reports_dir, domains):
 
 def generate_domain_index(domain, domain_dir, domain_report_dir, timestamps, trend_data):
     """Generate the index page for a domain showing all scans and trend chart."""
-    with open(os.path.join(domain_report_dir, "index.html"), "w") as f:
+    with open(os.path.join(domain_report_dir, "index.html"), "w", encoding="utf-8") as f:
         f.write(f"""
         <!DOCTYPE html>
         <html lang="en">
@@ -562,7 +562,7 @@ def generate_scan_report(domain, timestamp, scan_dir, domain_report_dir, verbose
         comparison_sitemap_data = read_csv_data(os.path.join(scan_dir, "comparison_missing_from_sitemap.csv"))
     
     # Generate the HTML file
-    with open(os.path.join(domain_report_dir, f"{timestamp}.html"), "w") as f:
+    with open(os.path.join(domain_report_dir, f"{timestamp}.html"), "w", encoding="utf-8") as f:
         f.write(f"""
         <!DOCTYPE html>
         <html lang="en">
