@@ -107,7 +107,7 @@ def discover_sitemap_url(base_url, output_dir=None, verbose=False):
         logging.info(f"Checking robots.txt at {robots_url}")
     
     try:
-        response = requests.get(robots_url, timeout=10)
+        response = requests.get(robots_url, timeout=3)
         
         if response.status_code == 200:
             # Look for Sitemap: directive in robots.txt
@@ -141,7 +141,7 @@ def discover_sitemap_url(base_url, output_dir=None, verbose=False):
             logging.info(f"Checking potential sitemap at {url}")
         
         try:
-            response = requests.get(url, timeout=10)
+            response = requests.get(url, timeout=3)
             if response.status_code == 200 and ('<urlset' in response.text or '<sitemapindex' in response.text):
                 if verbose:
                     logging.info(f"Found sitemap at {url}")
@@ -236,7 +236,7 @@ def get_sitemap_urls(sitemap_url, output_dir=None, verbose=False):
     content = ""
     
     try:
-        response = requests.get(sitemap_url, timeout=10)
+        response = requests.get(sitemap_url, timeout=3)
         response.raise_for_status()
         content = response.text
         
@@ -590,7 +590,7 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None, v
                     
                     for retry, delay in enumerate(retry_delays):
                         try:
-                            response = requests.get(current_url, timeout=10)
+                            response = requests.get(current_url, timeout=3)
                             break  # Success, exit retry loop
                         except Exception as e:
                             last_error = e
@@ -885,7 +885,7 @@ def cache_missing_urls(urls, output_dir, verbose=False):
         # Fetch with retry
         for retry, delay in enumerate(retry_delays):
             try:
-                response = requests.get(url, timeout=10)
+                response = requests.get(url, timeout=3)
                 
                 # Cache the content
                 with open(cache_file, 'w', encoding='utf-8') as f:
