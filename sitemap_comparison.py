@@ -28,13 +28,13 @@ SKIP_EXTENSIONS = [
     # Fonts
     '.woff', '.woff2', '.ttf', '.eot', '.otf',
     # Documents
-    '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.odt', '.ods', '.odp',
+    '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.odt', '.ods', '.odp', '.csv'
     # Archives
     '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2',
     # Media
     '.mp3', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.wav', '.ogg', '.webm',
     # Other
-    '.exe', '.dll', '.so', '.dmg', '.pkg', '.csv'
+    '.exe', '.dll', '.so', '.dmg', '.pkg'
 ]
 
 # Additional constants for common non-content URLs
