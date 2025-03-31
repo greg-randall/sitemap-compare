@@ -4,6 +4,7 @@ import signal
 import sys
 import concurrent.futures
 from urllib.parse import urlparse, urljoin
+import urllib.parse
 import xml.etree.ElementTree as ET
 from curl_cffi import requests
 from bs4 import BeautifulSoup
@@ -210,22 +211,10 @@ def extract_urls_with_regex(content, base_url):
     return urls
 
 def url_to_filename(url):
-    """Convert a URL to a valid filename."""
-    # Replace protocol separator
-    filename = url.replace('://', '_--')
-    # Replace other invalid characters
-    filename = filename.replace('/', '-').replace('\\', '-')
-    filename = filename.replace(':', '_').replace('*', '_')
-    filename = filename.replace('?', '_').replace('&', '_')
-    filename = filename.replace('"', '_').replace("'", '_')
-    filename = filename.replace('<', '_').replace('>', '_')
-    filename = filename.replace('|', '_').replace(' ', '_')
-    filename = filename.replace('#', '_').replace('%', '_')
-    filename = filename.replace('+', '_').replace('=', '_')
-    # Limit filename length to avoid issues with long paths
-    if len(filename) > 200:
-        filename = filename[:200]
-    return filename
+    """Turn a URL into a safe file name."""
+    filename = urllib.parse.quote(url, safe='-_.')
+    # Cut the name if it's too long.
+    return filename[:200]
 
 def get_cache_xml_filename(url, output_dir):
     """Generate a filename for caching a sitemap XML content."""
