@@ -77,6 +77,7 @@ python sitemap_comparison.py [-h] [--sitemap-url SITEMAP_URL] [--output-prefix O
 - `--verbose`: Enable verbose logging output
 - `--compare-previous`: Compare results with the most recent previous scan of the same site (default: True)
 - `--ignore-pagination`: Ignore common pagination URLs in the "missing from sitemap" report
+- `--ignore-categories-tags`: Ignore WordPress category and tag URLs in the "missing from sitemap" report
 
 ### Examples
 
@@ -108,6 +109,11 @@ python sitemap_comparison.py https://example.com --compare-previous=False
 Ignore pagination URLs in the missing from sitemap report:
 ```
 python sitemap_comparison.py https://example.com --ignore-pagination
+```
+
+Ignore WordPress category and tag URLs in the missing from sitemap report:
+```
+python sitemap_comparison.py https://example.com --ignore-categories-tags
 ```
 
 ## How It Works
