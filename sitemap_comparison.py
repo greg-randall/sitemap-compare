@@ -31,7 +31,7 @@ parser.add_argument('--max-pages', type=int, default=10000, help='Maximum number
 parser.add_argument('--verbose', action='store_true', help='Enable verbose logging output')
 parser.add_argument('--compare-previous', action='store_true', default=True, help='Compare results with the most recent previous scan of the same site (default: True)')
 parser.add_argument('--ignore-pagination', action='store_true', help='Ignore common pagination URLs in the "missing from sitemap" report')
-parser.add_argument('--ignore-categories', action='store_true', help='Ignore WordPress category URLs in the "missing from sitemap" report')
+parser.add_argument('--ignore-categories-tags', action='store_true', help='Ignore WordPress category and tag URLs in the "missing from sitemap" report')
 args = parser.parse_args()
 
 # Set logging level based on verbose flag
@@ -468,10 +468,11 @@ def is_pagination_url(url):
             return True
     return False
 
-def is_category_url(url):
-    """Check if a URL appears to be a WordPress category URL."""
-    # Common WordPress category patterns
-    category_patterns = [
+def is_category_or_tag_url(url):
+    """Check if a URL appears to be a WordPress category or tag URL."""
+    # Common WordPress category and tag patterns
+    patterns = [
+        # Category patterns
         r'/category/[^/]+/?$',          # /category/garden/
         r'/categories/[^/]+/?$',        # /categories/garden/
         r'/cat/[^/]+/?$',               # /cat/garden/
@@ -480,9 +481,17 @@ def is_category_url(url):
         r'\?category_name=[\w-]+$',     # ?category_name=garden
         r'/topics/[^/]+/?$',            # /topics/garden/
         r'/subject/[^/]+/?$',           # /subject/garden/
+        
+        # Tag patterns
+        r'/tag/[^/]+/?$',               # /tag/thing/
+        r'/tags/[^/]+/?$',              # /tags/thing/
+        r'\?tag=[\w-]+$',               # ?tag=thing
+        r'/label/[^/]+/?$',             # /label/thing/
+        r'/keyword/[^/]+/?$',           # /keyword/thing/
+        r'/topic/[^/]+/?$',             # /topic/thing/
     ]
     
-    for pattern in category_patterns:
+    for pattern in patterns:
         if re.search(pattern, url):
             return True
     return False
@@ -1016,16 +1025,16 @@ def main():
             else:
                 print(f"Ignored {pagination_filtered} pagination URLs")
 
-        # Apply category filtering if requested
-        if args.ignore_categories:
+        # Apply category and tag filtering if requested
+        if args.ignore_categories_tags:
             before_count = len(filtered_site_urls)
-            filtered_site_urls = {url for url in filtered_site_urls if not is_category_url(url)}
-            category_filtered = before_count - len(filtered_site_urls)
+            filtered_site_urls = {url for url in filtered_site_urls if not is_category_or_tag_url(url)}
+            category_tag_filtered = before_count - len(filtered_site_urls)
             
             if verbose:
-                logging.info(f"Filtered out {category_filtered} WordPress category URLs")
+                logging.info(f"Filtered out {category_tag_filtered} WordPress category and tag URLs")
             else:
-                print(f"Ignored {category_filtered} WordPress category URLs")
+                print(f"Ignored {category_tag_filtered} WordPress category and tag URLs")
                 
         in_site_not_sitemap = filtered_site_urls - sitemap_urls
             
