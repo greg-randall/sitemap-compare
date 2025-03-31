@@ -22,19 +22,27 @@ import csv
 # Global constants for file extensions to skip
 SKIP_EXTENSIONS = [
     # Style and script files
-    '.css', '.js', '.json', '.xml', 
+    '.css', '.js', '.json', '.xml', '.xsl', '.xslt', '.scss', '.sass', '.less',
     # Images
-    '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.webp', '.bmp', '.tiff', '.tif',
+    '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.webp', '.bmp', '.tiff', '.tif', '.avif', '.heic', '.heif',
     # Fonts
     '.woff', '.woff2', '.ttf', '.eot', '.otf',
     # Documents
-    '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.odt', '.ods', '.odp', '.csv'
+    '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.odt', '.ods', '.odp', '.csv', '.rtf', '.txt', '.md',
     # Archives
-    '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2',
+    '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz', '.tgz',
     # Media
-    '.mp3', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.wav', '.ogg', '.webm',
+    '.mp3', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.wav', '.ogg', '.webm', '.m4a', '.m4v', '.mkv', '.3gp', '.aac',
     # Other
-    '.exe', '.dll', '.so', '.dmg', '.pkg'
+    '.exe', '.dll', '.so', '.dmg', '.pkg', '.apk', '.deb', '.rpm',
+    # Data formats
+    '.sqlite', '.db', '.sql', '.yaml', '.yml', '.toml', '.ini', '.config',
+    # Web specific
+    '.htaccess', '.htpasswd', '.map', '.min.js', '.min.css',
+    # Programming languages
+    '.py', '.java', '.class', '.c', '.cpp', '.h', '.hpp', '.cs', '.php', '.rb', '.go', '.rs', '.swift',
+    # Config files
+    '.conf', '.cfg', '.env'
 ]
 
 # Additional constants for common non-content URLs
