@@ -19,6 +19,27 @@ import hashlib
 from tqdm import tqdm
 import csv
 
+# Global constants for file extensions to skip
+SKIP_EXTENSIONS = [
+    # Style and script files
+    '.css', '.js', '.json', '.xml', 
+    # Images
+    '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.webp', '.bmp', '.tiff', '.tif',
+    # Fonts
+    '.woff', '.woff2', '.ttf', '.eot', '.otf',
+    # Documents
+    '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.odt', '.ods', '.odp',
+    # Archives
+    '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2',
+    # Media
+    '.mp3', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.wav', '.ogg', '.webm',
+    # Other
+    '.exe', '.dll', '.so', '.dmg', '.pkg', '.csv'
+]
+
+# Additional constants for common non-content URLs
+SKIP_QUERY_PARAMS = ['?replytocom=', '?share=', '?like=', '?print=']
+
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -478,30 +499,14 @@ def is_valid_url(url):
         return False
         
     # Skip URLs with common non-content extensions
-    skip_extensions = [
-        # Style and script files
-        '.css', '.js', '.json', '.xml', 
-        # Images
-        '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.webp', '.bmp', '.tiff', '.tif',
-        # Fonts
-        '.woff', '.woff2', '.ttf', '.eot', '.otf',
-        # Documents
-        '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.odt', '.ods', '.odp',
-        # Archives
-        '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2',
-        # Media
-        '.mp3', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.wav', '.ogg', '.webm',
-        # Other
-        '.exe', '.dll', '.so', '.dmg', '.pkg', '.csv'
-    ]
-    
-    for ext in skip_extensions:
+    for ext in SKIP_EXTENSIONS:
         if url.lower().endswith(ext):
             return False
             
     # Skip URLs with common query parameters that indicate non-content
-    if any(param in url for param in ['?replytocom=', '?share=', '?like=']):
-        return False
+    for param in SKIP_QUERY_PARAMS:
+        if param in url:
+            return False
         
     return True
 
@@ -651,10 +656,7 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None, v
                     # Skip URLs with file extensions we want to avoid
                     parsed_url = urlparse(current_url)
                     path = parsed_url.path.lower()
-                    if any(path.endswith(ext) for ext in [
-                        '.jpg', '.jpeg', '.png', '.gif', '.pdf', '.doc', '.docx', 
-                        '.xls', '.xlsx', '.zip', '.rar', '.mp3', '.mp4', '.avi'
-                    ]):
+                    if any(path.endswith(ext) for ext in SKIP_EXTENSIONS):
                         url_queue.task_done()
                         continue
                         
@@ -678,22 +680,7 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None, v
                         
                         # Skip binary and non-HTML file types before adding to queue
                         path = parsed_url.path.lower()
-                        if any(path.endswith(ext) for ext in [
-                            # Style and script files
-                            '.css', '.js', '.json', '.xml', 
-                            # Images
-                            '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.webp', '.bmp', '.tiff', '.tif',
-                            # Fonts
-                            '.woff', '.woff2', '.ttf', '.eot', '.otf',
-                            # Documents
-                            '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.odt', '.ods', '.odp',
-                            # Archives
-                            '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2',
-                            # Media
-                            '.mp3', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.wav', '.ogg', '.webm',
-                            # Other
-                            '.exe', '.dll', '.so', '.dmg', '.pkg'
-                        ]):
+                        if any(path.endswith(ext) for ext in SKIP_EXTENSIONS):
                             continue
                         
                         with visited_lock:
