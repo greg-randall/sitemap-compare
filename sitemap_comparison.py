@@ -101,87 +101,56 @@ def discover_sitemap_url(base_url, output_dir=None, verbose=False):
         f"{base_domain}/sitemap_products_1.xml",
     ]
     
-    # Retry delays for exponential backoff
-    retry_delays = [1, 2, 4, 8, 16, 32]
-    
     # Check robots.txt first (most reliable method)
     robots_url = f"{base_domain}/robots.txt"
     if verbose:
         logging.info(f"Checking robots.txt at {robots_url}")
     
-    for retry, delay in enumerate(retry_delays):
-        try:
-            response = requests.get(robots_url, timeout=10)
-            
-            if response.status_code == 200:
-                # Look for Sitemap: directive in robots.txt
-                for line in response.text.splitlines():
-                    if line.lower().startswith('sitemap:'):
-                        sitemap_url = line.split(':', 1)[1].strip()
-                        if verbose:
-                            logging.info(f"Found sitemap in robots.txt: {sitemap_url}")
-                        else:
-                            print(f"Found sitemap in robots.txt: {sitemap_url}")
-                    
-                        # Cache the robots.txt file if output_dir is provided
-                        if output_dir and response.text:
-                            try:
-                                robots_cache_file = os.path.join(output_dir, "cache-xml", "robots.txt")
-                                with open(robots_cache_file, 'w', encoding='utf-8') as f:
-                                    f.write(response.text)
-                                if verbose:
-                                    logging.debug(f"Cached robots.txt content")
-                            except Exception as e:
-                                logging.warning(f"Failed to cache robots.txt content: {e}")
-                            
-                        return sitemap_url
-            # If we get here with a 200 status but no sitemap, break the retry loop
-            break
-        except Exception as e:
-            error_message = str(e).lower()
-            if any(err in error_message for err in [
-                'connection reset', 'connection timed out', 'timeout', 
-                'recv failure', 'operation timed out'
-            ]):
-                if retry < len(retry_delays) - 1:
+    try:
+        response = requests.get(robots_url, timeout=10)
+        
+        if response.status_code == 200:
+            # Look for Sitemap: directive in robots.txt
+            for line in response.text.splitlines():
+                if line.lower().startswith('sitemap:'):
+                    sitemap_url = line.split(':', 1)[1].strip()
                     if verbose:
-                        logging.warning(f"Connection error checking robots.txt, retrying in {delay}s (attempt {retry+1}/{len(retry_delays)}): {e}")
-                    time.sleep(delay)
-                    continue
-            if verbose:
-                logging.warning(f"Error checking robots.txt: {e}")
-            break
+                        logging.info(f"Found sitemap in robots.txt: {sitemap_url}")
+                    else:
+                        print(f"Found sitemap in robots.txt: {sitemap_url}")
+                
+                    # Cache the robots.txt file if output_dir is provided
+                    if output_dir and response.text:
+                        try:
+                            robots_cache_file = os.path.join(output_dir, "cache-xml", "robots.txt")
+                            with open(robots_cache_file, 'w', encoding='utf-8') as f:
+                                f.write(response.text)
+                            if verbose:
+                                logging.debug(f"Cached robots.txt content")
+                        except Exception as e:
+                            logging.warning(f"Failed to cache robots.txt content: {e}")
+                        
+                    return sitemap_url
+    except Exception as e:
+        if verbose:
+            logging.warning(f"Error checking robots.txt: {e}")
     
     # Try common locations
     for url in potential_locations:
         if verbose:
             logging.info(f"Checking potential sitemap at {url}")
         
-        for retry, delay in enumerate(retry_delays):
-            try:
-                response = requests.get(url, timeout=10)
-                if response.status_code == 200 and ('<urlset' in response.text or '<sitemapindex' in response.text):
-                    if verbose:
-                        logging.info(f"Found sitemap at {url}")
-                    else:
-                        print(f"Found sitemap at {url}")
-                    return url
-                # If we get here with a 200 status but no valid sitemap, break the retry loop
-                break
-            except Exception as e:
-                error_message = str(e).lower()
-                if any(err in error_message for err in [
-                    'connection reset', 'connection timed out', 'timeout', 
-                    'recv failure', 'operation timed out'
-                ]):
-                    if retry < len(retry_delays) - 1:
-                        if verbose:
-                            logging.warning(f"Connection error checking {url}, retrying in {delay}s (attempt {retry+1}/{len(retry_delays)}): {e}")
-                        time.sleep(delay)
-                        continue
+        try:
+            response = requests.get(url, timeout=10)
+            if response.status_code == 200 and ('<urlset' in response.text or '<sitemapindex' in response.text):
                 if verbose:
-                    logging.warning(f"Error checking {url}: {e}")
-                break
+                    logging.info(f"Found sitemap at {url}")
+                else:
+                    print(f"Found sitemap at {url}")
+                return url
+        except Exception as e:
+            if verbose:
+                logging.warning(f"Error checking {url}: {e}")
     
     if verbose:
         logging.error("Could not automatically discover sitemap")
