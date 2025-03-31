@@ -840,8 +840,10 @@ def create_output_directory(start_url):
     logging.info(f"Created output directory: {base_dir}")
     return base_dir
 
-def cache_missing_urls(urls, output_dir, verbose=False):
+def cache_missing_urls(urls, output_dir, num_workers=4, verbose=False):
     """Fetch and cache URLs that are in the sitemap but not found by spidering."""
+    global interrupted
+    
     if not urls:
         if verbose:
             logging.info("No missing URLs to cache")
@@ -850,28 +852,34 @@ def cache_missing_urls(urls, output_dir, verbose=False):
     cache_xml_dir = os.path.join(output_dir, "cache-xml")
     os.makedirs(cache_xml_dir, exist_ok=True)
     
+    # Convert to list and sort for consistent processing
+    url_list = sorted(urls)
+    total_urls = len(url_list)
+    
+    # Progress tracking
+    if verbose:
+        logging.info(f"Caching {total_urls} URLs found in sitemap but not in site spider using {num_workers} workers")
+    else:
+        print(f"Caching {total_urls} missing URLs using {num_workers} workers")
+    
+    # Use a thread-safe counter for progress tracking
+    processed_count = 0
+    counter_lock = threading.Lock()
+    
     # Progress bar for non-verbose mode
     pbar = None
-    if verbose:
-        logging.info(f"Caching {len(urls)} URLs found in sitemap but not in site spider")
-    else:
-        print(f"Caching {len(urls)} missing URLs")
-        pbar = tqdm(total=len(urls), desc="Caching URLs", unit="urls")
+    if not verbose:
+        pbar = tqdm(total=total_urls, desc="Caching URLs", unit="urls")
     
     # Retry delays for exponential backoff
     retry_delays = [1, 2, 4, 8, 16, 32]
     
-    for i, url in enumerate(sorted(urls)):
-        if interrupted:
-            if verbose:
-                logging.info("Caching interrupted. Exiting...")
-            if not verbose and pbar:
-                pbar.close()
-            break
-            
-        if verbose:
-            logging.info(f"Caching URL {i+1}/{len(urls)}: {url}")
+    def cache_url(url):
+        nonlocal processed_count
         
+        if interrupted:
+            return
+            
         # Generate cache filename
         filename = url_to_filename(url) + ".html"
         cache_file = os.path.join(cache_xml_dir, filename)
@@ -880,12 +888,17 @@ def cache_missing_urls(urls, output_dir, verbose=False):
         if os.path.exists(cache_file):
             if verbose:
                 logging.info(f"URL already cached: {url}")
-            if not verbose and pbar:
-                pbar.update(1)
-            continue
+            with counter_lock:
+                processed_count += 1
+                if not verbose and pbar:
+                    pbar.update(1)
+            return
             
         # Fetch with retry
         for retry, delay in enumerate(retry_delays):
+            if interrupted:
+                return
+                
             try:
                 response = requests.get(url, timeout=3)
                 
@@ -894,8 +907,6 @@ def cache_missing_urls(urls, output_dir, verbose=False):
                     f.write(response.text)
                 if verbose:
                     logging.info(f"Successfully cached: {url}")
-                if not verbose and pbar:
-                    pbar.update(1)
                 break
             except Exception as e:
                 error_message = str(e).lower()
@@ -903,7 +914,7 @@ def cache_missing_urls(urls, output_dir, verbose=False):
                     'connection reset', 'connection timed out', 'timeout', 
                     'recv failure', 'operation timed out'
                 ]):
-                    if retry < len(retry_delays) - 1:
+                    if retry < len(retry_delays) - 1 and not interrupted:
                         if verbose:
                             logging.warning(f"Connection error caching {url}, retrying in {delay}s (attempt {retry+1}/{len(retry_delays)}): {e}")
                         time.sleep(delay)
@@ -911,6 +922,47 @@ def cache_missing_urls(urls, output_dir, verbose=False):
                 if verbose:
                     logging.error(f"Failed to cache {url}: {e}")
                 break
+        
+        # Update progress
+        with counter_lock:
+            processed_count += 1
+            if not verbose and pbar:
+                pbar.update(1)
+    
+    try:
+        # Use ThreadPoolExecutor to process URLs in parallel
+        with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
+            # Submit all URLs to the executor
+            futures = [executor.submit(cache_url, url) for url in url_list]
+            
+            # Wait for all tasks to complete or for interruption
+            for future in concurrent.futures.as_completed(futures):
+                if interrupted:
+                    break
+                try:
+                    future.result()  # Get the result to catch any exceptions
+                except Exception as e:
+                    if verbose:
+                        logging.error(f"Error in worker thread: {e}")
+    
+    except Exception as e:
+        if verbose:
+            logging.error(f"Error in cache_missing_urls: {e}")
+    
+    finally:
+        # Close progress bar if it exists
+        if not verbose and pbar:
+            pbar.close()
+        
+        if interrupted:
+            if verbose:
+                logging.info("URL caching interrupted")
+            else:
+                print("\nURL caching interrupted")
+        elif verbose:
+            logging.info(f"Completed caching {processed_count} of {total_urls} URLs")
+        else:
+            print(f"Completed caching {processed_count} of {total_urls} URLs")
 
 def main():
     global interrupted
@@ -1037,7 +1089,7 @@ def main():
                 print(f"Found {len(in_sitemap_not_site)} URLs missing from site")
             
             # Cache pages that are in sitemap but not found by site spider
-            cache_missing_urls(in_sitemap_not_site, output_dir, verbose)
+            cache_missing_urls(in_sitemap_not_site, output_dir, num_workers=args.workers, verbose=verbose)
             
             # Write all sitemap URLs to CSV file for reference
             all_sitemap_urls_file = os.path.join(output_dir, "all_sitemap_urls.csv")
