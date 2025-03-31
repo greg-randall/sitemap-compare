@@ -784,9 +784,8 @@ def find_previous_scan(current_dir, domain):
     for dirname in os.listdir(sites_dir):
         dir_path = os.path.join(sites_dir, dirname)
         if os.path.isdir(dir_path) and dir_path != current_dir:
-            # Check if this directory has the required CSV files
-            if (os.path.exists(os.path.join(dir_path, "missing_from_site.csv")) and
-                os.path.exists(os.path.join(dir_path, "missing_from_sitemap.csv"))):
+            # Check if this directory has the required CSV files - only require all_site_urls.csv
+            if os.path.exists(os.path.join(dir_path, "all_site_urls.csv")):
                 timestamp_dirs.append(dir_path)
     
     if not timestamp_dirs:
@@ -944,30 +943,40 @@ def main():
         
         # Get sitemap URL (discover if not provided)
         sitemap_url = args.sitemap_url
+        sitemap_urls = set()
+        sitemap_sources = {}
+        normalized_sitemap_sources = {}
+        
         if not sitemap_url:
             sitemap_url = discover_sitemap_url(args.start_url, output_dir, verbose)
-            if not sitemap_url:
-                logging.error("Could not discover sitemap. Please provide sitemap URL with --sitemap-url")
-                sys.exit(1)
-        
-        # Get URLs from sitemap
-        if not verbose:
-            print("Extracting URLs from sitemap...")
-        sitemap_urls_raw, sitemap_sources = get_sitemap_urls(sitemap_url, output_dir, verbose)
+            
+        if not sitemap_url:
+            if verbose:
+                logging.warning("Could not discover sitemap. Continuing with site spider only.")
+            else:
+                print("No sitemap found. Continuing with site spider only.")
+            # Set an empty set for sitemap URLs
+            sitemap_urls_raw = set()
+            has_sitemap = False
+        else:
+            # Get URLs from sitemap
+            if not verbose:
+                print("Extracting URLs from sitemap...")
+            sitemap_urls_raw, sitemap_sources = get_sitemap_urls(sitemap_url, output_dir, verbose)
+            has_sitemap = True
         
         # Filter and normalize sitemap URLs
-        sitemap_urls = set()
-        normalized_sitemap_sources = {}  # Track sources for normalized URLs
         for url in sitemap_urls_raw:
             if is_valid_url(url):
                 normalized_url = normalize_url(url)
                 sitemap_urls.add(normalized_url)
-                normalized_sitemap_sources[normalized_url] = sitemap_sources.get(url, sitemap_url)
+                normalized_sitemap_sources[normalized_url] = sitemap_sources.get(url, sitemap_url if sitemap_url else args.start_url)
         
-        if verbose:
-            logging.info(f"After filtering and normalization, found {len(sitemap_urls)} valid URLs in sitemap")
-        else:
-            print(f"Found {len(sitemap_urls)} valid URLs in sitemap")
+        if has_sitemap:
+            if verbose:
+                logging.info(f"After filtering and normalization, found {len(sitemap_urls)} valid URLs in sitemap")
+            else:
+                print(f"Found {len(sitemap_urls)} valid URLs in sitemap")
         
         # Get URLs from spidering
         site_urls_raw, site_sources = spider_website(args.start_url, max_pages=args.max_pages, 
@@ -1034,28 +1043,42 @@ def main():
         else:
             print(f"Found {len(in_site_not_sitemap)} URLs missing from sitemap")
         
-        missing_from_site_file = os.path.join(output_dir, "missing_from_site.csv")
-        with open(missing_from_site_file, 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(["Source", "URL"])
-            for url in sorted(in_sitemap_not_site):
-                writer.writerow([normalized_sitemap_sources.get(url, sitemap_url), url])
-        if verbose:
-            logging.info(f"Wrote {len(in_sitemap_not_site)} URLs missing from site to {missing_from_site_file}")
+        # Handle sitemap-related output files based on whether we have a sitemap
+        if has_sitemap:
+            missing_from_site_file = os.path.join(output_dir, "missing_from_site.csv")
+            with open(missing_from_site_file, 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(["Source", "URL"])
+                for url in sorted(in_sitemap_not_site):
+                    writer.writerow([normalized_sitemap_sources.get(url, sitemap_url if sitemap_url else args.start_url), url])
+            if verbose:
+                logging.info(f"Wrote {len(in_sitemap_not_site)} URLs missing from site to {missing_from_site_file}")
+            else:
+                print(f"Found {len(in_sitemap_not_site)} URLs missing from site")
+            
+            # Cache pages that are in sitemap but not found by site spider
+            cache_missing_urls(in_sitemap_not_site, output_dir, verbose)
+            
+            # Write all sitemap URLs to CSV file for reference
+            all_sitemap_urls_file = os.path.join(output_dir, "all_sitemap_urls.csv")
+            with open(all_sitemap_urls_file, 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(["Source", "URL"])
+                for url in sorted(sitemap_urls):
+                    writer.writerow([normalized_sitemap_sources.get(url, sitemap_url if sitemap_url else args.start_url), url])
         else:
-            print(f"Found {len(in_sitemap_not_site)} URLs missing from site")
+            # Create empty files for consistency
+            with open(os.path.join(output_dir, "missing_from_site.csv"), 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(["Source", "URL"])
+                writer.writerow(["No sitemap found", ""])
+            
+            with open(os.path.join(output_dir, "all_sitemap_urls.csv"), 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(["Source", "URL"])
+                writer.writerow(["No sitemap found", ""])
         
-        # Cache pages that are in sitemap but not found by site spider
-        cache_missing_urls(in_sitemap_not_site, output_dir, verbose)
-        
-        # Write all URLs to CSV files for reference
-        all_sitemap_urls_file = os.path.join(output_dir, "all_sitemap_urls.csv")
-        with open(all_sitemap_urls_file, 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(["Source", "URL"])
-            for url in sorted(sitemap_urls):
-                writer.writerow([normalized_sitemap_sources.get(url, sitemap_url), url])
-        
+        # Write all site URLs to CSV file for reference
         all_site_urls_file = os.path.join(output_dir, "all_site_urls.csv")
         with open(all_site_urls_file, 'w', newline='') as f:
             writer = csv.writer(f)
