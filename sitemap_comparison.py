@@ -604,7 +604,7 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None, v
                 
                 try:
                     # Implement exponential backoff for connection errors
-                    retry_delays = [1, 2, 4, 8, 16, 32]
+                    retry_delays = [ 2, 4, 8, 16, 32]
                     response = None
                     last_error = None
                     
@@ -872,7 +872,7 @@ def cache_missing_urls(urls, output_dir, num_workers=4, verbose=False):
         pbar = tqdm(total=total_urls, desc="Caching URLs", unit="urls")
     
     # Retry delays for exponential backoff
-    retry_delays = [1, 2, 4, 8, 16, 32]
+    retry_delays = [ 2, 4, 8, 16, 32]
     
     def cache_url(url):
         nonlocal processed_count
