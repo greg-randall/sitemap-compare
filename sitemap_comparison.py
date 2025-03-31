@@ -259,7 +259,15 @@ def get_sitemap_urls(sitemap_url, output_dir=None, verbose=False):
                 logging.info(f"Found {len(loc_urls)} URLs using direct <loc> tag extraction")
             
             # Check if any of these are sitemaps themselves
-            sitemap_urls = [url for url in loc_urls if 'sitemap' in url.lower() and url.endswith(('.xml', '.xml.gz'))]
+            sitemap_urls = [url for url in loc_urls if (
+                # Check for common sitemap indicators in the URL
+                ('sitemap' in url.lower() or 'site-map' in url.lower() or 'site_map' in url.lower()) or
+                # Check for common sitemap file extensions
+                url.lower().endswith(('.xml', '.xml.gz', '.gz', '.txt')) or
+                # Check for URL patterns that might indicate a sitemap
+                ('/sitemap/' in url.lower() or '/sitemaps/' in url.lower() or 
+                 '/sitemap_' in url.lower() or '/sitemap-' in url.lower())
+            ) and not url.endswith(('.css', '.js', '.jpg', '.jpeg', '.png', '.gif'))]  # Exclude obvious non-sitemap files
             if sitemap_urls:
                 if verbose:
                     logging.info(f"Found {len(sitemap_urls)} sub-sitemaps to process")
