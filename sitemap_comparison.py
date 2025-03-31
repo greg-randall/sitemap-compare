@@ -492,7 +492,7 @@ def is_valid_url(url):
         # Media
         '.mp3', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.wav', '.ogg', '.webm',
         # Other
-        '.exe', '.dll', '.so', '.dmg', '.pkg'
+        '.exe', '.dll', '.so', '.dmg', '.pkg', '.csv'
     ]
     
     for ext in skip_extensions:
