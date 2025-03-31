@@ -179,6 +179,11 @@ def extract_urls_with_regex(content, base_url):
     parsed_base = urlparse(base_url)
     base_domain = f"{parsed_base.scheme}://{parsed_base.netloc}"
     
+    # Get domain without www for comparison
+    base_netloc_no_www = parsed_base.netloc
+    if base_netloc_no_www.startswith('www.'):
+        base_netloc_no_www = base_netloc_no_www[4:]
+    
     for match in matches:
         # Skip anchors, javascript, mailto links
         if match.startswith(('#', 'javascript:', 'mailto:')):
@@ -191,9 +196,14 @@ def extract_urls_with_regex(content, base_url):
             else:
                 match = urljoin(base_url, match)
                 
-        # Only include URLs from the same domain
+        # Only include URLs from the same domain (allowing www and non-www variants)
         parsed_url = urlparse(match)
-        if parsed_url.netloc == parsed_base.netloc:
+        url_netloc_no_www = parsed_url.netloc
+        if url_netloc_no_www.startswith('www.'):
+            url_netloc_no_www = url_netloc_no_www[4:]
+            
+        if (parsed_url.netloc == parsed_base.netloc or 
+            url_netloc_no_www == base_netloc_no_www):
             urls.add(match)
             
     logging.info(f"Regex extraction found {len(urls)} URLs")
