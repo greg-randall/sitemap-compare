@@ -62,6 +62,10 @@ parser.add_argument('--verbose', action='store_true', help='Enable verbose loggi
 parser.add_argument('--compare-previous', action='store_true', default=True, help='Compare results with the most recent previous scan of the same site (default: True)')
 parser.add_argument('--ignore-pagination', action='store_true', help='Ignore common pagination URLs in the "missing from sitemap" report')
 parser.add_argument('--ignore-categories-tags', action='store_true', help='Ignore WordPress category and tag URLs in the "missing from sitemap" report')
+parser.add_argument('--compress-cache', action='store_true', default=True,
+                    help='Compress cache folders after processing and delete originals (default: True)')
+parser.add_argument('--no-compress-cache', dest='compress_cache', action='store_false',
+                    help='Disable compression of cache folders after processing')
 args = parser.parse_args()
 
 # Set logging level based on verbose flag
@@ -753,6 +757,84 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None, v
         print(f"Spidering complete. Found {len(found_urls)} URLs")
     return found_urls, url_sources
 
+def compress_cache_folders(output_dir, verbose=False):
+    """Compress cache and cache-xml folders using 7zip and delete originals if successful."""
+    import subprocess
+    import shutil
+    
+    cache_folders = ["cache", "cache-xml"]
+    success = True
+    
+    for folder in cache_folders:
+        folder_path = os.path.join(output_dir, folder)
+        if not os.path.exists(folder_path):
+            if verbose:
+                logging.info(f"Cache folder {folder_path} not found, skipping compression")
+            continue
+            
+        archive_path = os.path.join(output_dir, f"{folder}.7z")
+        
+        if verbose:
+            logging.info(f"Compressing {folder_path} to {archive_path}...")
+        else:
+            print(f"Compressing {folder} folder...")
+        
+        try:
+            # Run 7zip to compress the folder with level 5 compression
+            result = subprocess.run(
+                ["7z", "a", "-mx5", archive_path, folder_path], 
+                capture_output=True, 
+                text=True,
+                check=False
+            )
+            
+            if result.returncode != 0:
+                if verbose:
+                    logging.error(f"Error compressing {folder_path}: {result.stderr}")
+                else:
+                    print(f"Error compressing {folder_path}: {result.stderr}")
+                success = False
+                continue
+                
+            # Verify the archive
+            if verbose:
+                logging.info(f"Verifying archive {archive_path}...")
+            
+            verify_result = subprocess.run(
+                ["7z", "t", archive_path],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            
+            if verify_result.returncode != 0:
+                if verbose:
+                    logging.error(f"Error verifying archive {archive_path}: {verify_result.stderr}")
+                else:
+                    print(f"Error verifying archive {archive_path}: {verify_result.stderr}")
+                success = False
+                continue
+                
+            # Delete the original folder
+            if verbose:
+                logging.info(f"Compression successful, deleting original {folder_path}...")
+            
+            shutil.rmtree(folder_path)
+            
+            if verbose:
+                logging.info(f"Successfully compressed {folder} to {folder}.7z and removed original folder")
+            else:
+                print(f"Successfully compressed {folder} to {folder}.7z and removed original folder")
+            
+        except Exception as e:
+            if verbose:
+                logging.error(f"Error during compression of {folder_path}: {str(e)}")
+            else:
+                print(f"Error during compression of {folder_path}: {str(e)}")
+            success = False
+    
+    return success
+
 def find_previous_scan(current_dir, domain):
     """Find the most recent previous scan directory for the given domain."""
     sites_dir = os.path.join("sites", domain)
@@ -1157,6 +1239,12 @@ def main():
                 else:
                     print("\nNo previous scan found for comparison")
         
+        # Compress cache folders if requested
+        if args.compress_cache:
+            if verbose:
+                logging.info("Compressing cache folders...")
+            compress_cache_folders(output_dir, verbose)
+            
         if verbose:
             logging.info("Comparison complete!")
         else:
