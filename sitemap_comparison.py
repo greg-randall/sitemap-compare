@@ -550,11 +550,10 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None, v
     # Counter for progress reporting
     visited_count = 0
     
-    # Set up cache directory if output_dir is provided
+    # Set up cache reference if output_dir is provided
     cache_dir = None
     if output_dir:
-        cache_dir = os.path.join(output_dir, "cache")
-        os.makedirs(cache_dir, exist_ok=True)
+        cache_dir = os.path.join(output_dir, "cache")  # Just for reference, don't create directory
     
     # Progress bar for non-verbose mode
     progress_bar = None
