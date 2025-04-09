@@ -796,10 +796,9 @@ def compress_cache_folders(output_dir, verbose=False):
             print(f"Compressing {folder} folder... (Original size: {original_size / (1024*1024):.2f} MB)")
         
         try:
-            # Use py7zr to compress the folder with compression level 2 and solid block
+            # Use py7zr to compress the folder with compression level 2
             with py7zr.SevenZipFile(archive_path, 'w', 
-                                   filters=[{'id': py7zr.FILTER_LZMA2, 'preset': 2}],
-                                   solid=True) as archive:
+                                   filters=[{'id': py7zr.FILTER_LZMA2, 'preset': 2}]) as archive:
                 archive.writeall(folder_path, arcname=folder)
             
             # Get compressed size
@@ -942,10 +941,9 @@ def compress_output_files(output_dir, verbose=False):
         print(f"Compressing {len(files_to_compress)} output files (total size: {total_size / 1024:.2f} KB)")
     
     try:
-        # Create the archive with compression level 2 and solid block for better compression
+        # Create the archive with compression level 2
         with py7zr.SevenZipFile(archive_path, 'w', 
-                               filters=[{'id': py7zr.FILTER_LZMA2, 'preset': 2}],
-                               solid=True) as archive:
+                               filters=[{'id': py7zr.FILTER_LZMA2, 'preset': 2}]) as archive:
             for file_path, arcname in files_to_compress:
                 archive.write(file_path, arcname)
         
