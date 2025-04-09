@@ -791,8 +791,8 @@ def compress_cache_folders(output_dir, verbose=False):
             print(f"Compressing {folder} folder... (Original size: {original_size / (1024*1024):.2f} MB)")
         
         try:
-            # Use py7zr to compress the folder with level 5 compression
-            with py7zr.SevenZipFile(archive_path, 'w', compression_level=5) as archive:
+            # Use py7zr to compress the folder without specifying compression_level
+            with py7zr.SevenZipFile(archive_path, 'w') as archive:
                 archive.writeall(folder_path, arcname=folder)
             
             # Get compressed size
