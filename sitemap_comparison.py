@@ -62,10 +62,8 @@ parser.add_argument('--verbose', action='store_true', help='Enable verbose loggi
 parser.add_argument('--compare-previous', action='store_true', default=True, help='Compare results with the most recent previous scan of the same site (default: True)')
 parser.add_argument('--ignore-pagination', action='store_true', help='Ignore common pagination URLs in the "missing from sitemap" report')
 parser.add_argument('--ignore-categories-tags', action='store_true', help='Ignore WordPress category and tag URLs in the "missing from sitemap" report')
-parser.add_argument('--compress-cache', action='store_true', default=True,
-                    help='Compress cache folders after processing and delete originals (default: True)')
-parser.add_argument('--no-compress-cache', dest='compress_cache', action='store_false',
-                    help='Disable compression of cache folders after processing')
+parser.add_argument('--use-direct-cache', action='store_true', default=False,
+                    help='Store cache files directly instead of in 7z archives (default: True)')
 args = parser.parse_args()
 
 # Set logging level based on verbose flag
@@ -156,9 +154,12 @@ def discover_sitemap_url(base_url, output_dir=None, verbose=False):
                     # Cache the robots.txt file if output_dir is provided
                     if output_dir and response.text:
                         try:
-                            robots_cache_file = os.path.join(output_dir, "cache-xml", "robots.txt")
-                            with open(robots_cache_file, 'w', encoding='utf-8') as f:
-                                f.write(response.text)
+                            # Generate archive path and internal filename
+                            archive_path = os.path.join(output_dir, "cache-xml.7z")
+                            arcname = "cache-xml/robots.txt"
+                            
+                            # Append to archive
+                            append_to_archive(archive_path, response.text, arcname, verbose)
                             if verbose:
                                 logging.debug(f"Cached robots.txt content")
                         except Exception as e:
@@ -275,12 +276,14 @@ def get_sitemap_urls(sitemap_url, output_dir=None, verbose=False):
         # Cache the XML content if output_dir is provided
         if output_dir and content:
             try:
-                cache_file = get_cache_xml_filename(sitemap_url, output_dir)
-                if cache_file:
-                    with open(cache_file, 'w', encoding='utf-8') as f:
-                        f.write(content)
-                    if verbose:
-                        logging.debug(f"Cached XML content for {sitemap_url}")
+                # Generate archive path and internal filename
+                archive_path = os.path.join(output_dir, "cache-xml.7z")
+                arcname = f"cache-xml/{url_to_filename(sitemap_url)}.xml"
+                
+                # Append to archive
+                append_to_archive(archive_path, content, arcname, verbose)
+                if verbose:
+                    logging.debug(f"Cached XML content for {sitemap_url}")
             except Exception as e:
                 if verbose:
                     logging.warning(f"Failed to cache XML content for {sitemap_url}: {e}")
@@ -649,12 +652,15 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None, v
                     content_type = response.headers.get('Content-Type', '').lower()
                     is_html = ('text/html' in content_type or 'application/xhtml+xml' in content_type)
                     
-                    # Cache the content if it's HTML and we have a cache directory
-                    if is_html and cache_dir:
+                    # Cache the content if it's HTML and we have an output directory
+                    if is_html and output_dir:
                         try:
-                            cache_file = get_cache_filename(current_url, cache_dir)
-                            with open(cache_file, 'w', encoding='utf-8') as f:
-                                f.write(response.text)
+                            # Generate archive path and internal filename
+                            archive_path = os.path.join(output_dir, "cache.7z")
+                            arcname = f"cache/{url_to_filename(current_url)}.html"
+                            
+                            # Append to archive
+                            append_to_archive(archive_path, response.text, arcname, verbose)
                             if verbose:
                                 logging.debug(f"Cached content for {current_url}")
                         except Exception as e:
@@ -857,6 +863,45 @@ def compress_cache_folders(output_dir, verbose=False):
     
     return success
 
+def append_to_archive(archive_path, content, arcname, verbose=False):
+    """Append content to a 7z archive file."""
+    import py7zr
+    import tempfile
+    import os
+    
+    # Create archive if it doesn't exist
+    if not os.path.exists(archive_path):
+        if verbose:
+            logging.info(f"Creating new archive: {archive_path}")
+        os.makedirs(os.path.dirname(archive_path), exist_ok=True)
+        
+        # Create empty archive
+        with py7zr.SevenZipFile(archive_path, 'w') as archive:
+            pass
+    
+    # Write content to a temporary file
+    with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', delete=False) as temp_file:
+        temp_file.write(content)
+        temp_path = temp_file.name
+    
+    try:
+        # Append the temporary file to the archive
+        with py7zr.SevenZipFile(archive_path, 'a') as archive:
+            archive.write(temp_path, arcname=arcname)
+        
+        if verbose:
+            logging.debug(f"Appended {arcname} to archive {archive_path}")
+    except Exception as e:
+        if verbose:
+            logging.error(f"Error appending to archive {archive_path}: {e}")
+        raise
+    finally:
+        # Clean up the temporary file
+        try:
+            os.unlink(temp_path)
+        except:
+            pass
+
 def find_previous_scan(current_dir, domain):
     """Find the most recent previous scan directory for the given domain."""
     sites_dir = os.path.join("sites", domain)
@@ -934,13 +979,6 @@ def create_output_directory(start_url):
     base_dir = os.path.join("sites", domain, timestamp)
     os.makedirs(base_dir, exist_ok=True)
     
-    # Create cache directories
-    cache_dir = os.path.join(base_dir, "cache")
-    os.makedirs(cache_dir, exist_ok=True)
-    
-    cache_xml_dir = os.path.join(base_dir, "cache-xml")
-    os.makedirs(cache_xml_dir, exist_ok=True)
-    
     logging.info(f"Created output directory: {base_dir}")
     return base_dir
 
@@ -952,9 +990,6 @@ def cache_missing_urls(urls, output_dir, num_workers=4, verbose=False):
         if verbose:
             logging.info("No missing URLs to cache")
         return
-        
-    cache_xml_dir = os.path.join(output_dir, "cache-xml")
-    os.makedirs(cache_xml_dir, exist_ok=True)
     
     # Convert to list and sort for consistent processing
     url_list = sorted(urls)
@@ -984,19 +1019,11 @@ def cache_missing_urls(urls, output_dir, num_workers=4, verbose=False):
         if interrupted:
             return
             
-        # Generate cache filename
+        # Generate cache filename for checking
         filename = url_to_filename(url) + ".html"
-        cache_file = os.path.join(cache_xml_dir, filename)
+        archive_path = os.path.join(output_dir, "cache-xml.7z")
         
-        # Skip if already cached
-        if os.path.exists(cache_file):
-            if verbose:
-                logging.info(f"URL already cached: {url}")
-            with counter_lock:
-                processed_count += 1
-                if not verbose and pbar:
-                    pbar.update(1)
-            return
+        # We can't easily check if a file exists in the archive, so we'll just proceed
             
         # Fetch with retry
         for retry, delay in enumerate(retry_delays):
@@ -1006,9 +1033,12 @@ def cache_missing_urls(urls, output_dir, num_workers=4, verbose=False):
             try:
                 response = requests.get(url, timeout=3)
                 
-                # Cache the content
-                with open(cache_file, 'w', encoding='utf-8') as f:
-                    f.write(response.text)
+                # Generate archive path and internal filename
+                archive_path = os.path.join(output_dir, "cache-xml.7z")
+                arcname = f"cache-xml/{filename}"
+                
+                # Append to archive
+                append_to_archive(archive_path, response.text, arcname, verbose)
                 if verbose:
                     logging.info(f"Successfully cached: {url}")
                 break
@@ -1261,11 +1291,7 @@ def main():
                 else:
                     print("\nNo previous scan found for comparison")
         
-        # Compress cache folders if requested
-        if args.compress_cache:
-            if verbose:
-                logging.info("Compressing cache folders...")
-            compress_cache_folders(output_dir, verbose)
+        # No need to compress cache folders as we're already using archives
             
         if verbose:
             logging.info("Comparison complete!")
