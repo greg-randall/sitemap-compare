@@ -166,11 +166,8 @@ The most interesting findings are typically in the `missing_from_sitemap.txt` fi
 
 - **Sitemap Discovery Fails**: Use the `--sitemap-url` parameter to specify the sitemap location directly
 - **Crawling Too Slow**: Increase the number of workers with `--workers`
-- **Too Many Pages**: Limit the crawl with `--max-pages`
-- **Memory Issues**: Reduce the number of workers and max pages
 - **Connection Errors**: The tool implements exponential backoff, but you might need to run it again if a site has strict rate limiting
-- **Access Denied**: Some sites may block automated crawling; consider using a VPN or proxy
-- **Hidden Content Not Found**: Try increasing `--max-pages` as hidden content is often deeper in the site structure
+- **Access Denied**: Some sites may block automated crawling; consider using a VPN or proxy or creating a pull request using playwright or similar
 
 ## License
 
