@@ -78,6 +78,8 @@ python sitemap_comparison.py [-h] [--sitemap-url SITEMAP_URL] [--output-prefix O
 - `--compare-previous`: Compare results with the most recent previous scan of the same site (default: True)
 - `--ignore-pagination`: Ignore common pagination URLs in the "missing from sitemap" report
 - `--ignore-categories-tags`: Ignore WordPress category and tag URLs in the "missing from sitemap" report
+- `--compress-cache`: Compress cache folders after processing and delete originals (default: True)
+- `--no-compress-cache`: Disable compression of cache folders after processing
 
 ### Examples
 
@@ -114,6 +116,11 @@ python sitemap_comparison.py https://example.com --ignore-pagination
 Ignore WordPress category and tag URLs in the missing from sitemap report:
 ```
 python sitemap_comparison.py https://example.com --ignore-categories-tags
+```
+
+Disable cache compression (enabled by default):
+```
+python sitemap_comparison.py https://example.com --no-compress-cache
 ```
 
 ## How It Works
