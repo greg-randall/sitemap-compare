@@ -763,7 +763,7 @@ def spider_website(start_url, max_pages=10000, num_workers=4, output_dir=None, v
     return found_urls, url_sources
 
 def compress_cache_folders(output_dir, verbose=False):
-    """Compress cache and cache-xml folders using py7zr and delete originals if successful."""
+    """Compress cache and cache-xml folders using py7zr with compression level 2 and delete originals if successful."""
     import shutil
     import py7zr
     
@@ -796,8 +796,10 @@ def compress_cache_folders(output_dir, verbose=False):
             print(f"Compressing {folder} folder... (Original size: {original_size / (1024*1024):.2f} MB)")
         
         try:
-            # Use py7zr to compress the folder without specifying compression_level
-            with py7zr.SevenZipFile(archive_path, 'w') as archive:
+            # Use py7zr to compress the folder with compression level 2 and solid block
+            with py7zr.SevenZipFile(archive_path, 'w', 
+                                   filters=[{'id': py7zr.FILTER_LZMA2, 'preset': 2}],
+                                   solid=True) as archive:
                 archive.writeall(folder_path, arcname=folder)
             
             # Get compressed size
@@ -863,7 +865,7 @@ def compress_cache_folders(output_dir, verbose=False):
     return success
 
 def append_to_archive(archive_path, content, arcname, verbose=False):
-    """Append content to a 7z archive file."""
+    """Append content to a 7z archive file with compression level 2."""
     import py7zr
     import tempfile
     import os
@@ -874,8 +876,8 @@ def append_to_archive(archive_path, content, arcname, verbose=False):
             logging.info(f"Creating new archive: {archive_path}")
         os.makedirs(os.path.dirname(archive_path), exist_ok=True)
         
-        # Create empty archive
-        with py7zr.SevenZipFile(archive_path, 'w') as archive:
+        # Create empty archive with compression level 2
+        with py7zr.SevenZipFile(archive_path, 'w', filters=[{'id': py7zr.FILTER_LZMA2, 'preset': 2}]) as archive:
             pass
     
     # Write content to a temporary file
@@ -884,8 +886,8 @@ def append_to_archive(archive_path, content, arcname, verbose=False):
         temp_path = temp_file.name
     
     try:
-        # Append the temporary file to the archive
-        with py7zr.SevenZipFile(archive_path, 'a') as archive:
+        # Append the temporary file to the archive with compression level 2
+        with py7zr.SevenZipFile(archive_path, 'a', filters=[{'id': py7zr.FILTER_LZMA2, 'preset': 2}]) as archive:
             archive.write(temp_path, arcname=arcname)
         
         if verbose:
@@ -900,6 +902,89 @@ def append_to_archive(archive_path, content, arcname, verbose=False):
             os.unlink(temp_path)
         except:
             pass
+
+def compress_output_files(output_dir, verbose=False):
+    """Compress all output CSV files into a single 7z archive with compression level 2."""
+    import py7zr
+    import os
+    
+    # List of CSV files to compress
+    csv_files = [
+        "missing_from_sitemap.csv",
+        "missing_from_site.csv",
+        "all_sitemap_urls.csv",
+        "all_site_urls.csv",
+        "comparison_missing_from_site.csv",
+        "comparison_missing_from_sitemap.csv"
+    ]
+    
+    # Create the archive path
+    archive_path = os.path.join(output_dir, "results.7z")
+    
+    # Check which files exist
+    files_to_compress = []
+    total_size = 0
+    
+    for filename in csv_files:
+        file_path = os.path.join(output_dir, filename)
+        if os.path.exists(file_path):
+            files_to_compress.append((file_path, filename))
+            total_size += os.path.getsize(file_path)
+    
+    if not files_to_compress:
+        if verbose:
+            logging.info("No output files found to compress")
+        return False
+    
+    if verbose:
+        logging.info(f"Compressing {len(files_to_compress)} output files (total size: {total_size / 1024:.2f} KB)")
+    else:
+        print(f"Compressing {len(files_to_compress)} output files (total size: {total_size / 1024:.2f} KB)")
+    
+    try:
+        # Create the archive with compression level 2 and solid block for better compression
+        with py7zr.SevenZipFile(archive_path, 'w', 
+                               filters=[{'id': py7zr.FILTER_LZMA2, 'preset': 2}],
+                               solid=True) as archive:
+            for file_path, arcname in files_to_compress:
+                archive.write(file_path, arcname)
+        
+        # Verify the archive
+        try:
+            with py7zr.SevenZipFile(archive_path, 'r') as archive:
+                # Just check if we can list the contents
+                archive.list()
+            verify_success = True
+        except Exception as e:
+            if verbose:
+                logging.error(f"Error verifying archive {archive_path}: {str(e)}")
+            else:
+                print(f"Error verifying archive {archive_path}: {str(e)}")
+            verify_success = False
+            return False
+        
+        if verify_success:
+            # Get compressed size
+            compressed_size = os.path.getsize(archive_path)
+            compression_ratio = (total_size / compressed_size) if compressed_size > 0 else 0
+            space_saved = total_size - compressed_size
+            space_saved_percent = (space_saved / total_size * 100) if total_size > 0 else 0
+            
+            if verbose:
+                logging.info(f"Successfully compressed output files to {archive_path}")
+                logging.info(f"Compression stats: {compression_ratio:.2f}x ratio, saved {space_saved / 1024:.2f} KB ({space_saved_percent:.1f}%)")
+            else:
+                print(f"Successfully compressed output files to results.7z")
+                print(f"Compression stats: {compression_ratio:.2f}x ratio, saved {space_saved / 1024:.2f} KB ({space_saved_percent:.1f}%)")
+            
+            return True
+    
+    except Exception as e:
+        if verbose:
+            logging.error(f"Error compressing output files: {str(e)}")
+        else:
+            print(f"Error compressing output files: {str(e)}")
+        return False
 
 def find_previous_scan(current_dir, domain):
     """Find the most recent previous scan directory for the given domain."""
@@ -1292,6 +1377,9 @@ def main():
         
         # No need to compress cache folders as we're already using archives
             
+        # Compress output files
+        compress_output_files(output_dir, verbose)
+        
         if verbose:
             logging.info("Comparison complete!")
         else:
