@@ -764,6 +764,8 @@ def compress_cache_folders(output_dir, verbose=False):
     
     cache_folders = ["cache", "cache-xml"]
     success = True
+    total_original_size = 0
+    total_compressed_size = 0
     
     for folder in cache_folders:
         folder_path = os.path.join(output_dir, folder)
@@ -774,10 +776,19 @@ def compress_cache_folders(output_dir, verbose=False):
             
         archive_path = os.path.join(output_dir, f"{folder}.7z")
         
+        # Calculate original folder size
+        original_size = 0
+        for dirpath, dirnames, filenames in os.walk(folder_path):
+            for f in filenames:
+                fp = os.path.join(dirpath, f)
+                original_size += os.path.getsize(fp)
+        
+        total_original_size += original_size
+        
         if verbose:
-            logging.info(f"Compressing {folder_path} to {archive_path}...")
+            logging.info(f"Compressing {folder_path} to {archive_path}... (Original size: {original_size / (1024*1024):.2f} MB)")
         else:
-            print(f"Compressing {folder} folder...")
+            print(f"Compressing {folder} folder... (Original size: {original_size / (1024*1024):.2f} MB)")
         
         try:
             # Run 7zip to compress the folder with level 5 compression
@@ -795,6 +806,15 @@ def compress_cache_folders(output_dir, verbose=False):
                     print(f"Error compressing {folder_path}: {result.stderr}")
                 success = False
                 continue
+                
+            # Get compressed size
+            compressed_size = os.path.getsize(archive_path)
+            total_compressed_size += compressed_size
+            
+            # Calculate compression ratio and space saved
+            compression_ratio = (original_size / compressed_size) if compressed_size > 0 else 0
+            space_saved = original_size - compressed_size
+            space_saved_percent = (space_saved / original_size * 100) if original_size > 0 else 0
                 
             # Verify the archive
             if verbose:
@@ -823,8 +843,10 @@ def compress_cache_folders(output_dir, verbose=False):
             
             if verbose:
                 logging.info(f"Successfully compressed {folder} to {folder}.7z and removed original folder")
+                logging.info(f"Compression stats for {folder}: {compression_ratio:.2f}x ratio, saved {space_saved / (1024*1024):.2f} MB ({space_saved_percent:.1f}%)")
             else:
                 print(f"Successfully compressed {folder} to {folder}.7z and removed original folder")
+                print(f"Compression stats: {compression_ratio:.2f}x ratio, saved {space_saved / (1024*1024):.2f} MB ({space_saved_percent:.1f}%)")
             
         except Exception as e:
             if verbose:
@@ -832,6 +854,17 @@ def compress_cache_folders(output_dir, verbose=False):
             else:
                 print(f"Error during compression of {folder_path}: {str(e)}")
             success = False
+    
+    # Print total statistics if we compressed more than one folder
+    if len(cache_folders) > 1 and total_original_size > 0:
+        total_ratio = (total_original_size / total_compressed_size) if total_compressed_size > 0 else 0
+        total_saved = total_original_size - total_compressed_size
+        total_saved_percent = (total_saved / total_original_size * 100) if total_original_size > 0 else 0
+        
+        if verbose:
+            logging.info(f"Total compression stats: {total_ratio:.2f}x ratio, saved {total_saved / (1024*1024):.2f} MB ({total_saved_percent:.1f}%)")
+        else:
+            print(f"Total compression stats: {total_ratio:.2f}x ratio, saved {total_saved / (1024*1024):.2f} MB ({total_saved_percent:.1f}%)")
     
     return success
 
