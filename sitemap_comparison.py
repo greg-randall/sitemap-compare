@@ -112,7 +112,6 @@ class Config:
         self.compare_previous = args.compare_previous
         self.ignore_pagination = args.ignore_pagination
         self.ignore_categories_tags = args.ignore_categories_tags
-        self.use_direct_cache = args.use_direct_cache
         self.thread_timeout = args.thread_timeout
         
         # Parse domain from URL
@@ -246,74 +245,41 @@ class CacheManager:
         filename = urllib.parse.quote(url, safe='-_.')
         # Cut the name if it's too long.
         return filename[:200]
-        
-    def append_to_archive(self, archive_path, content, arcname):
-        """Append content to a 7z archive file with compression level 2."""
-        import py7zr
-        import tempfile
-        import os
-        
-        # Create archive if it doesn't exist
-        if not os.path.exists(archive_path):
-            if self.verbose:
-                logging.info(f"Creating new archive: {archive_path}")
-            os.makedirs(os.path.dirname(archive_path), exist_ok=True)
-            
-            # Create empty archive with compression level 2
-            with py7zr.SevenZipFile(archive_path, 'w', filters=[{'id': py7zr.FILTER_LZMA2, 'preset': 2}]) as archive:
-                pass
-        
-        # Write content to a temporary file
-        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', delete=False) as temp_file:
-            temp_file.write(content)
-            temp_path = temp_file.name
-        
-        try:
-            # Append the temporary file to the archive with compression level 2
-            with py7zr.SevenZipFile(archive_path, 'a', filters=[{'id': py7zr.FILTER_LZMA2, 'preset': 2}]) as archive:
-                archive.write(temp_path, arcname=arcname)
-            
-            if self.verbose:
-                logging.debug(f"Appended {arcname} to archive {archive_path}")
-        except Exception as e:
-            if self.verbose:
-                logging.error(f"Error appending to archive {archive_path}: {e}")
-            raise
-        finally:
-            # Clean up the temporary file
-            try:
-                os.unlink(temp_path)
-            except:
-                pass
     
     def cache_content(self, url, content, is_sitemap=False):
-        """Cache content to the appropriate archive."""
+        """Cache content to a file."""
         if not self.output_dir:
             return
             
         try:
-            # Determine which archive to use
+            # Determine which directory to use
             if is_sitemap:
-                archive_path = os.path.join(self.output_dir, "cache-xml.7z")
-                arcname = f"cache-xml/{self.url_to_filename(url)}.xml"
+                cache_dir = os.path.join(self.output_dir, "cache-xml")
+                file_ext = ".xml"
             else:
-                archive_path = os.path.join(self.output_dir, "cache.7z")
-                arcname = f"cache/{self.url_to_filename(url)}.html"
+                cache_dir = os.path.join(self.output_dir, "cache")
+                file_ext = ".html"
                 
-            # Append to archive
-            self.append_to_archive(archive_path, content, arcname)
+            # Create directory if it doesn't exist
+            os.makedirs(cache_dir, exist_ok=True)
+            
+            # Create the file path
+            filename = self.url_to_filename(url) + file_ext
+            file_path = os.path.join(cache_dir, filename)
+            
+            # Write content to file
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+                
             if self.verbose:
                 logging.debug(f"Cached content for {url}")
         except Exception as e:
             if self.verbose:
                 logging.warning(f"Failed to cache content for {url}: {e}")
-                
+    
     def compress_output_files(self):
-        """Compress all output CSV files into a single 7z archive with compression level 2."""
-        import py7zr
-        import os
-        
-        # List of CSV files to compress
+        """Copy output CSV files to a results directory."""
+        # List of CSV files to copy
         csv_files = [
             "missing_from_sitemap.csv",
             "missing_from_site.csv",
@@ -323,71 +289,49 @@ class CacheManager:
             "comparison_missing_from_sitemap.csv"
         ]
         
-        # Create the archive path
-        archive_path = os.path.join(self.output_dir, "results.7z")
+        # Create the results directory
+        results_dir = os.path.join(self.output_dir, "results")
+        os.makedirs(results_dir, exist_ok=True)
         
         # Check which files exist
-        files_to_compress = []
+        files_to_copy = []
         total_size = 0
         
         for filename in csv_files:
             file_path = os.path.join(self.output_dir, filename)
             if os.path.exists(file_path):
-                files_to_compress.append((file_path, filename))
+                files_to_copy.append((file_path, filename))
                 total_size += os.path.getsize(file_path)
         
-        if not files_to_compress:
+        if not files_to_copy:
             if self.verbose:
-                logging.info("No output files found to compress")
+                logging.info("No output files found to copy")
             return False
         
         if self.verbose:
-            logging.info(f"Compressing {len(files_to_compress)} output files (total size: {total_size / 1024:.2f} KB)")
+            logging.info(f"Copying {len(files_to_copy)} output files (total size: {total_size / 1024:.2f} KB)")
         else:
-            print(f"Compressing {len(files_to_compress)} output files (total size: {total_size / 1024:.2f} KB)")
+            print(f"Copying {len(files_to_copy)} output files (total size: {total_size / 1024:.2f} KB)")
         
         try:
-            # Create the archive with compression level 2
-            with py7zr.SevenZipFile(archive_path, 'w', 
-                                   filters=[{'id': py7zr.FILTER_LZMA2, 'preset': 2}]) as archive:
-                for file_path, arcname in files_to_compress:
-                    archive.write(file_path, arcname)
+            # Copy each file to the results directory
+            for file_path, filename in files_to_copy:
+                dest_path = os.path.join(results_dir, filename)
+                import shutil
+                shutil.copy2(file_path, dest_path)
             
-            # Verify the archive
-            try:
-                with py7zr.SevenZipFile(archive_path, 'r') as archive:
-                    # Just check if we can list the contents
-                    archive.list()
-                verify_success = True
-            except Exception as e:
-                if self.verbose:
-                    logging.error(f"Error verifying archive {archive_path}: {str(e)}")
-                else:
-                    print(f"Error verifying archive {archive_path}: {str(e)}")
-                verify_success = False
-                return False
+            if self.verbose:
+                logging.info(f"Successfully copied output files to {results_dir}")
+            else:
+                print(f"Successfully copied output files to results directory")
             
-            if verify_success:
-                # Get compressed size
-                compressed_size = os.path.getsize(archive_path)
-                compression_ratio = (total_size / compressed_size) if compressed_size > 0 else 0
-                space_saved = total_size - compressed_size
-                space_saved_percent = (space_saved / total_size * 100) if total_size > 0 else 0
-                
-                if self.verbose:
-                    logging.info(f"Successfully compressed output files to {archive_path}")
-                    logging.info(f"Compression stats: {compression_ratio:.2f}x ratio, saved {space_saved / 1024:.2f} KB ({space_saved_percent:.1f}%)")
-                else:
-                    print(f"Successfully compressed output files to results.7z")
-                    print(f"Compression stats: {compression_ratio:.2f}x ratio, saved {space_saved / 1024:.2f} KB ({space_saved_percent:.1f}%)")
-                
-                return True
+            return True
         
         except Exception as e:
             if self.verbose:
-                logging.error(f"Error compressing output files: {str(e)}")
+                logging.error(f"Error copying output files: {str(e)}")
             else:
-                print(f"Error compressing output files: {str(e)}")
+                print(f"Error copying output files: {str(e)}")
             return False
 class SitemapFetcher:
     def __init__(self, config, cache_manager, url_processor):
@@ -1446,8 +1390,6 @@ def main():
     parser.add_argument('--compare-previous', action='store_true', default=True, help='Compare results with the most recent previous scan of the same site (default: True)')
     parser.add_argument('--ignore-pagination', action='store_true', help='Ignore common pagination URLs in the "missing from sitemap" report')
     parser.add_argument('--ignore-categories-tags', action='store_true', help='Ignore WordPress category and tag URLs in the "missing from sitemap" report')
-    parser.add_argument('--use-direct-cache', action='store_true', default=False,
-                        help='Store cache files directly instead of in 7z archives (default: True)')
     parser.add_argument('--thread-timeout', type=int, default=30, 
                         help='Maximum time in seconds a thread can spend on a single URL (default: 30)')
     args = parser.parse_args()
