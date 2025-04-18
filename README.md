@@ -67,7 +67,8 @@ The tool will:
 ```
 python sitemap_comparison.py [-h] [--sitemap-url SITEMAP_URL] [--output-prefix OUTPUT_PREFIX] 
                             [--workers WORKERS] [--max-pages MAX_PAGES] [--verbose]
-                            [--compare-previous] [--ignore-pagination] start_url
+                            [--compare-previous] [--ignore-pagination] [--ignore-categories-tags]
+                            [--thread-timeout THREAD_TIMEOUT] start_url
 ```
 
 - `start_url`: The URL to start crawling from (required)
