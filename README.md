@@ -23,17 +23,23 @@ Your results will be in the `sites/[yourwebsite.com]/[timestamp]/` directory, wi
 
 ## Why Use This Tool?
 
-Websites often contain content that isn't properly included in their sitemaps. This can include:
+There are two key discrepancies this tool helps identify:
 
+### 1. Content in your site but missing from your sitemap:
 - **Orphaned pages**: Content that exists but isn't linked from main navigation
 - **Forgotten content**: Outdated pages that should be updated or removed
 - **Missing SEO opportunities**: Pages that should be in your sitemap for better search visibility
 - **Development artifacts**: Test pages or staging content that should be restricted
-- **Legacy content**: Old sections that need review for relevance and accuracy
+
+### 2. Content in your sitemap but not found during crawling (often more interesting):
+- **Unpublished content**: Pages that exist but aren't linked or publicly available
+- **Restricted areas**: Content that requires authentication or special access
+- **Pre-launch pages**: New sections prepared but not yet activated
+- **Incorrectly configured URLs**: Links with typos or improper formatting
 
 This tool helps you maintain a complete and accurate website by:
-- Finding URLs in your sitemap that aren't easily accessible when crawling the site
-- Discovering pages on your site that aren't included in the sitemap
+- Finding URLs in your sitemap that aren't easily accessible when crawling the site (potentially revealing interesting unpublished content)
+- Discovering pages on your site that aren't included in the sitemap (helping improve SEO and content organization)
 - Caching all discovered content for offline analysis
 - Revealing the complete structure of your website beyond what's officially documented
 
@@ -174,11 +180,20 @@ The tool creates a directory structure under `sites/[domain]/[timestamp]/` conta
 - `cache-xml/`: Directory containing cached sitemap XML files (for reference)
 - `results/`: Directory containing copies of the CSV files for easy access
 
-The `missing_from_sitemap.txt` file can help you discover:
+The output files can help you discover:
+
+From `missing_from_sitemap.txt`:
 - Content that should be included in your sitemap
 - Old pages that need updating or removal
 - Duplicate content that should be consolidated
 - Resources that should be protected or removed
+
+From `missing_from_site.csv` (often the most interesting findings):
+- Unpublished or upcoming content
+- Content that requires authentication
+- Pages prepared but not yet launched
+- Preview versions of content
+- Development or staging versions of pages
 
 From a security perspective, it might also reveal:
 - Admin interfaces that should be properly secured
