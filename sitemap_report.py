@@ -463,6 +463,88 @@ def generate_scan_report(domain, timestamp, scan_dir, domain_report_dir, verbose
                     </div>
                 </div>
             """)
+            
+            # Add comparison highlights section
+            f.write("""
+                <h2>Recent Changes Highlights</h2>
+                <div class="highlights-container">
+            """)
+            
+            # New URLs missing from site
+            new_missing_site_urls = [row for row in comparison_site_data if row["Status"] == "New"]
+            if new_missing_site_urls:
+                f.write("""
+                    <div class="highlight-section">
+                        <h3>New URLs Missing from Site</h3>
+                        <ul class="highlight-list">
+                """)
+                for row in new_missing_site_urls[:10]:  # Show top 10
+                    url = row.get("URL", "")
+                    f.write(f'<li><a href="{url}" target="_blank">{url}</a></li>')
+                if len(new_missing_site_urls) > 10:
+                    f.write(f'<li class="more-items">... and {len(new_missing_site_urls) - 10} more</li>')
+                f.write("""
+                        </ul>
+                    </div>
+                """)
+            
+            # Fixed URLs that were missing from site
+            fixed_missing_site_urls = [row for row in comparison_site_data if row["Status"] == "Fixed"]
+            if fixed_missing_site_urls:
+                f.write("""
+                    <div class="highlight-section">
+                        <h3>Fixed URLs (No Longer Missing from Site)</h3>
+                        <ul class="highlight-list">
+                """)
+                for row in fixed_missing_site_urls[:10]:  # Show top 10
+                    url = row.get("URL", "")
+                    f.write(f'<li><a href="{url}" target="_blank">{url}</a></li>')
+                if len(fixed_missing_site_urls) > 10:
+                    f.write(f'<li class="more-items">... and {len(fixed_missing_site_urls) - 10} more</li>')
+                f.write("""
+                        </ul>
+                    </div>
+                """)
+            
+            # New URLs missing from sitemap
+            new_missing_sitemap_urls = [row for row in comparison_sitemap_data if row["Status"] == "New"]
+            if new_missing_sitemap_urls:
+                f.write("""
+                    <div class="highlight-section">
+                        <h3>New URLs Missing from Sitemap</h3>
+                        <ul class="highlight-list">
+                """)
+                for row in new_missing_sitemap_urls[:10]:  # Show top 10
+                    url = row.get("URL", "")
+                    f.write(f'<li><a href="{url}" target="_blank">{url}</a></li>')
+                if len(new_missing_sitemap_urls) > 10:
+                    f.write(f'<li class="more-items">... and {len(new_missing_sitemap_urls) - 10} more</li>')
+                f.write("""
+                        </ul>
+                    </div>
+                """)
+            
+            # Fixed URLs that were missing from sitemap
+            fixed_missing_sitemap_urls = [row for row in comparison_sitemap_data if row["Status"] == "Fixed"]
+            if fixed_missing_sitemap_urls:
+                f.write("""
+                    <div class="highlight-section">
+                        <h3>Fixed URLs (No Longer Missing from Sitemap)</h3>
+                        <ul class="highlight-list">
+                """)
+                for row in fixed_missing_sitemap_urls[:10]:  # Show top 10
+                    url = row.get("URL", "")
+                    f.write(f'<li><a href="{url}" target="_blank">{url}</a></li>')
+                if len(fixed_missing_sitemap_urls) > 10:
+                    f.write(f'<li class="more-items">... and {len(fixed_missing_sitemap_urls) - 10} more</li>')
+                f.write("""
+                        </ul>
+                    </div>
+                """)
+            
+            f.write("""
+                </div>
+            """)
         
         # URLs Missing from Site section
         f.write("""
