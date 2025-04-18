@@ -1,22 +1,45 @@
 # Sitemap Comparison Tool
 
-A Python utility that compares URLs found in a website's sitemap with URLs discovered by crawling the site. This tool helps identify discrepancies between what's publicly disclosed in sitemaps and what's actually accessible on a website.
+A Python utility that compares URLs found in a website's sitemap with URLs discovered by crawling the site. This tool helps identify discrepancies between what's listed in your sitemaps and what's actually accessible on your website.
+
+## Quickstart
+
+```bash
+# Clone the repository
+git clone https://github.com/greg-randall/sitemap-compare
+cd sitemap-comparison
+
+# Install requirements
+pip install -r requirements.txt
+
+# Run the tool on your site
+python sitemap_comparison.py https://yourwebsite.com
+
+# Generate an HTML report
+python sitemap_report.py --open-browser
+```
+
+Your results will be in the `sites/[yourwebsite.com]/[timestamp]/` directory, with an interactive HTML report in the `reports` directory.
 
 ## Why Use This Tool?
 
-Websites often contain content that isn't explicitly listed in their sitemaps. This can include:
+Websites often contain content that isn't properly included in their sitemaps. This can include:
 
-- **Hidden content**: Pages intentionally excluded from sitemaps but still accessible
 - **Orphaned pages**: Content that exists but isn't linked from main navigation
-- **Restricted areas**: Sections that site owners don't want widely discovered
-- **Development artifacts**: Test pages, staging content, or admin interfaces
-- **Legacy content**: Outdated pages that weren't properly removed
+- **Forgotten content**: Outdated pages that should be updated or removed
+- **Missing SEO opportunities**: Pages that should be in your sitemap for better search visibility
+- **Development artifacts**: Test pages or staging content that should be restricted
+- **Legacy content**: Old sections that need review for relevance and accuracy
 
-This tool helps you discover this hidden content by:
-- Finding URLs in the sitemap that aren't easily accessible when crawling the site
-- Discovering pages on the site that aren't included in the sitemap
+This tool helps you maintain a complete and accurate website by:
+- Finding URLs in your sitemap that aren't easily accessible when crawling the site
+- Discovering pages on your site that aren't included in the sitemap
 - Caching all discovered content for offline analysis
-- Revealing the true structure of a website beyond what's officially presented
+- Revealing the complete structure of your website beyond what's officially documented
+
+Additionally, from a security perspective, it can help identify:
+- Pages that might contain sensitive information but are publicly accessible
+- Admin interfaces or development environments that should be restricted
 
 ## Features
 
@@ -29,9 +52,8 @@ This tool helps you discover this hidden content by:
 - Comprehensive logging for troubleshooting
 - Handles malformed XML with fallback parsing methods
 - Historical comparison to track changes between scans
-- Discovers content not intended for public visibility
-- Reveals the "dark corners" of websites that aren't in the sitemap
-- Identifies potential security issues through exposed but unlisted pages
+- Identifies content missing from your sitemap that should be included
+- Detects pages listed in sitemaps that aren't accessible to visitors
 - HTML report generation for easy analysis and sharing of results
 
 ## Installation
@@ -67,8 +89,7 @@ The tool will:
 ```
 python sitemap_comparison.py [-h] [--sitemap-url SITEMAP_URL] [--output-prefix OUTPUT_PREFIX] 
                             [--workers WORKERS] [--max-pages MAX_PAGES] [--verbose]
-                            [--compare-previous] [--ignore-pagination] [--ignore-categories-tags]
-                            [--thread-timeout THREAD_TIMEOUT] start_url
+                            [--compare-previous] [--ignore-pagination] start_url
 ```
 
 - `start_url`: The URL to start crawling from (required)
@@ -133,32 +154,36 @@ python sitemap_comparison.py https://example.com --ignore-categories-tags
    - Normalizes URLs to avoid duplicates due to trivial differences
    - Filters out non-content URLs (images, CSS, etc.)
    - Discovers pages not linked from main navigation
-   - Finds content that site owners may not want widely known
+   - Finds content that might have been forgotten or overlooked
 
 3. **Comparison**:
    - Identifies URLs present in the sitemap but not found during crawling
    - Finds URLs discovered during crawling but missing from the sitemap
-   - Reveals the "hidden web" of content not meant to be easily discovered
-   - Caches all content for offline analysis and investigation
+   - Reveals the complete structure of your site for better content management
+   - Caches all content for offline analysis and organization
 
 ## Output
 
 The tool creates a directory structure under `sites/[domain]/[timestamp]/` containing:
 
-- `missing_from_sitemap.csv`: URLs found while crawling but not in the sitemap (potentially hidden content)
-- `missing_from_site.csv`: URLs in the sitemap that weren't found while crawling (possibly restricted content)
-- `all_sitemap_urls.csv`: All URLs extracted from the sitemap (what the site owner wants you to see)
-- `all_site_urls.csv`: All URLs discovered while crawling (what's actually there)
+- `missing_from_sitemap.csv`: URLs found while crawling but not in the sitemap (potentially overlooked content)
+- `missing_from_site.csv`: URLs in the sitemap that weren't found while crawling (possibly broken links)
+- `all_sitemap_urls.csv`: All URLs extracted from the sitemap
+- `all_site_urls.csv`: All URLs discovered while crawling
 - `cache/`: Directory containing cached HTML content from crawled pages (for offline analysis)
 - `cache-xml/`: Directory containing cached sitemap XML files (for reference)
 - `results/`: Directory containing copies of the CSV files for easy access
 
-The most interesting findings are typically in the `missing_from_sitemap.txt` file, which may reveal:
-- Admin interfaces
-- Development environments
-- Internal tools
-- Outdated but still accessible content
-- Pages intentionally hidden from search engines
+The `missing_from_sitemap.txt` file can help you discover:
+- Content that should be included in your sitemap
+- Old pages that need updating or removal
+- Duplicate content that should be consolidated
+- Resources that should be protected or removed
+
+From a security perspective, it might also reveal:
+- Admin interfaces that should be properly secured
+- Development environments that should be restricted
+- Internal tools that shouldn't be publicly accessible
 
 ## HTML Report Generation
 
