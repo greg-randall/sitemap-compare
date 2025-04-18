@@ -20,6 +20,14 @@ import argparse
 import shutil
 import json
 
+def timestamp_to_datetime(ts):
+    """Convert a timestamp string to a datetime object for sorting."""
+    try:
+        return datetime.datetime.strptime(ts, "%m-%d-%Y_%I-%M%p")
+    except:
+        # Return a very old date for timestamps that don't match the format
+        return datetime.datetime(1900, 1, 1)
+
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description='Generate HTML reports from sitemap comparison results')
@@ -95,8 +103,8 @@ def generate_site_reports(output_dir="reports", open_browser=True, verbose=False
                 elif verbose:
                     print(f"  Skipping incomplete scan: {item} (missing required files)")
         
-        # Sort timestamps chronologically
-        timestamps.sort()
+        # Sort timestamps chronologically using datetime objects
+        timestamps.sort(key=timestamp_to_datetime)
         
         if verbose:
             print(f"  Found {len(timestamps)} scans for {domain}")
@@ -120,8 +128,9 @@ def generate_site_reports(output_dir="reports", open_browser=True, verbose=False
             print(f"  Generating index page for {domain}...")
         generate_domain_index(domain, domain_dir, domain_report_dir, timestamps, trend_data)
         
-        # Process each scan (now using reversed timestamps for newest first)
-        for timestamp in reversed(timestamps):
+        # Process each scan (sorted by datetime, newest first)
+        sorted_timestamps = sorted(timestamps, key=lambda ts: timestamp_to_datetime(ts), reverse=True)
+        for timestamp in sorted_timestamps:
             if verbose:
                 print(f"  Generating report for scan: {timestamp}")
             scan_dir = os.path.join(domain_dir, timestamp)
@@ -208,7 +217,7 @@ def generate_main_index(reports_dir, domains):
             # Get the latest scan date for this domain
             domain_dir = os.path.join("sites", domain)
             timestamps = [item for item in os.listdir(domain_dir) if os.path.isdir(os.path.join(domain_dir, item))]
-            timestamps.sort(reverse=True)
+            timestamps.sort(key=lambda ts: timestamp_to_datetime(ts), reverse=True)
             
             latest_timestamp = "No scans" if not timestamps else timestamps[0]
             try:
@@ -308,8 +317,9 @@ def generate_domain_index(domain, domain_dir, domain_report_dir, timestamps, tre
                 <ul class="scan-list">
         """)
         
-        # Process each scan to get summary information (reversed for newest first)
-        for timestamp in reversed(timestamps):
+        # Process each scan to get summary information (sorted by datetime, newest first)
+        sorted_timestamps = sorted(timestamps, key=lambda ts: timestamp_to_datetime(ts), reverse=True)
+        for timestamp in sorted_timestamps:
             scan_dir = os.path.join(domain_dir, timestamp)
             
             # Parse the timestamp
