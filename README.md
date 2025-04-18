@@ -78,6 +78,7 @@ python sitemap_comparison.py [-h] [--sitemap-url SITEMAP_URL] [--output-prefix O
 - `--compare-previous`: Compare results with the most recent previous scan of the same site (default: True)
 - `--ignore-pagination`: Ignore common pagination URLs in the "missing from sitemap" report
 - `--ignore-categories-tags`: Ignore WordPress category and tag URLs in the "missing from sitemap" report
+- `--thread-timeout`: Maximum time in seconds a thread can spend on a single URL (default: 30)
 - `--compress-cache`: Compress cache folders after processing and delete originals (default: True)
 - `--no-compress-cache`: Disable compression of cache folders after processing
 
