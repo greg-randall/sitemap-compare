@@ -81,8 +81,19 @@ def generate_site_reports(output_dir="reports", open_browser=True, verbose=False
         # Get all scan timestamps for this domain
         timestamps = []
         for item in os.listdir(domain_dir):
-            if os.path.isdir(os.path.join(domain_dir, item)):
-                timestamps.append(item)
+            scan_dir = os.path.join(domain_dir, item)
+            if os.path.isdir(scan_dir):
+                # Check if this scan has the necessary files
+                has_required_files = (
+                    os.path.exists(os.path.join(scan_dir, "missing_from_site.csv")) or 
+                    os.path.exists(os.path.join(scan_dir, "missing_from_site.txt")) or
+                    os.path.exists(os.path.join(scan_dir, "missing_from_sitemap.csv")) or
+                    os.path.exists(os.path.join(scan_dir, "missing_from_sitemap.txt"))
+                )
+                if has_required_files:
+                    timestamps.append(item)
+                elif verbose:
+                    print(f"  Skipping incomplete scan: {item} (missing required files)")
         
         # Sort timestamps chronologically
         timestamps.sort()
@@ -144,8 +155,6 @@ def collect_trend_data(domain_dir, timestamps, verbose=False):
         except:
             formatted_date = timestamp
         
-        trend_data["labels"].append(formatted_date)
-        
         scan_dir = os.path.join(domain_dir, timestamp)
         
         # Check for both CSV and TXT files
@@ -157,15 +166,21 @@ def collect_trend_data(domain_dir, timestamps, verbose=False):
         if not os.path.exists(missing_sitemap_file):
             missing_sitemap_file = os.path.join(scan_dir, "missing_from_sitemap.txt")
         
-        # Get counts
-        missing_site_count = count_csv_rows(missing_site_file, verbose)
-        missing_sitemap_count = count_csv_rows(missing_sitemap_file, verbose)
-        
-        if verbose:
-            print(f"    Timestamp {timestamp}: {missing_site_count} missing from site, {missing_sitemap_count} missing from sitemap")
-        
-        trend_data["missing_site"].append(missing_site_count)
-        trend_data["missing_sitemap"].append(missing_sitemap_count)
+        # Only add to trend data if at least one of the required files exists
+        if os.path.exists(missing_site_file) or os.path.exists(missing_sitemap_file):
+            trend_data["labels"].append(formatted_date)
+            
+            # Get counts
+            missing_site_count = count_csv_rows(missing_site_file, verbose)
+            missing_sitemap_count = count_csv_rows(missing_sitemap_file, verbose)
+            
+            if verbose:
+                print(f"    Timestamp {timestamp}: {missing_site_count} missing from site, {missing_sitemap_count} missing from sitemap")
+            
+            trend_data["missing_site"].append(missing_site_count)
+            trend_data["missing_sitemap"].append(missing_sitemap_count)
+        elif verbose:
+            print(f"    Skipping timestamp {timestamp} - missing required files")
     
     return trend_data
 
