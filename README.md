@@ -32,6 +32,7 @@ This tool helps you discover this hidden content by:
 - Discovers content not intended for public visibility
 - Reveals the "dark corners" of websites that aren't in the sitemap
 - Identifies potential security issues through exposed but unlisted pages
+- HTML report generation for easy analysis and sharing of results
 
 ## Installation
 
@@ -157,6 +158,37 @@ The most interesting findings are typically in the `missing_from_sitemap.txt` fi
 - Internal tools
 - Outdated but still accessible content
 - Pages intentionally hidden from search engines
+
+## HTML Report Generation
+
+The tool includes a companion script `sitemap_report.py` that generates interactive HTML reports from the comparison results:
+
+```
+python sitemap_report.py [--open-browser] [--output-dir DIRECTORY] [--verbose]
+```
+
+### Report Generator Arguments
+
+- `--open-browser`: Open the report in a web browser after generation
+- `--output-dir`: Output directory for reports (default: 'reports')
+- `--verbose`: Enable verbose output for debugging
+
+### Report Features
+
+- **Interactive dashboard** with historical trends
+- **Searchable tables** of missing URLs
+- **Comparison visualizations** between scans
+- **Mobile-friendly design** for viewing on any device
+- **Highlights of new issues** since previous scans
+
+After running the sitemap comparison tool on one or more sites, run the report generator to create a comprehensive set of HTML reports that make it easy to analyze the results.
+
+Example:
+```
+python sitemap_report.py --open-browser
+```
+
+This will generate reports in the `reports` directory and automatically open them in your default web browser.
 
 ## Troubleshooting
 
