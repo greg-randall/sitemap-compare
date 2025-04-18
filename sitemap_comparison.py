@@ -49,6 +49,58 @@ SKIP_EXTENSIONS = [
 SKIP_QUERY_PARAMS = ['?replytocom=', '?share=', '?like=', '?print=']
 
 
+class ThreadMonitor:
+    def __init__(self, max_thread_time=60):  # Default 60 seconds max per thread
+        self.max_thread_time = max_thread_time
+        self.thread_start_times = {}
+        self.thread_lock = threading.Lock()
+        self.monitor_running = False
+        self.monitor_thread = None
+    
+    def start_monitoring(self):
+        """Start the monitoring thread"""
+        self.monitor_running = True
+        self.monitor_thread = threading.Thread(target=self._monitor_threads, daemon=True)
+        self.monitor_thread.start()
+    
+    def stop_monitoring(self):
+        """Stop the monitoring thread"""
+        self.monitor_running = False
+        if self.monitor_thread:
+            self.monitor_thread.join(timeout=1.0)
+    
+    def register_thread_start(self, thread_id):
+        """Register the start time of a thread operation"""
+        with self.thread_lock:
+            self.thread_start_times[thread_id] = time.time()
+    
+    def register_thread_end(self, thread_id):
+        """Register the completion of a thread operation"""
+        with self.thread_lock:
+            if thread_id in self.thread_start_times:
+                del self.thread_start_times[thread_id]
+    
+    def _monitor_threads(self):
+        """Monitor thread that checks for stuck threads"""
+        while self.monitor_running:
+            current_time = time.time()
+            stuck_threads = []
+            
+            with self.thread_lock:
+                for thread_id, start_time in list(self.thread_start_times.items()):
+                    elapsed = current_time - start_time
+                    if elapsed > self.max_thread_time:
+                        stuck_threads.append((thread_id, elapsed))
+                        # Remove from tracking to avoid repeated warnings
+                        del self.thread_start_times[thread_id]
+            
+            # Log any stuck threads
+            for thread_id, elapsed in stuck_threads:
+                logging.warning(f"Thread {thread_id} exceeded time limit! Running for {elapsed:.1f}s (limit: {self.max_thread_time}s)")
+            
+            # Sleep for a short time before checking again
+            time.sleep(1.0)
+
 class Config:
     def __init__(self, args):
         self.start_url = args.start_url
@@ -61,6 +113,7 @@ class Config:
         self.ignore_pagination = args.ignore_pagination
         self.ignore_categories_tags = args.ignore_categories_tags
         self.use_direct_cache = args.use_direct_cache
+        self.thread_timeout = args.thread_timeout
         
         # Parse domain from URL
         self.domain = urlparse(self.start_url).netloc
@@ -678,6 +731,8 @@ class WebsiteSpider:
         self.url_processor = url_processor
         self.verbose = config.verbose
         self.interrupted = False
+        # Add thread monitor with configurable timeout
+        self.thread_monitor = ThreadMonitor(max_thread_time=config.thread_timeout)
         
     def set_interrupted(self):
         """Set the interrupted flag."""
@@ -721,6 +776,9 @@ class WebsiteSpider:
         estimated_total = initial_estimate
         last_update_time = time.time()
         
+        # Start the thread monitor
+        self.thread_monitor.start_monitoring()
+        
         def process_url():
             nonlocal visited_count, last_update_time, estimated_total
             while not self.interrupted and visited_count < max_pages:
@@ -759,6 +817,10 @@ class WebsiteSpider:
                     
                     if verbose:
                         logging.info(f"Visiting {current_url} ({visited_count}/{max_pages})")
+                    
+                    # Generate a unique ID for this thread operation
+                    thread_op_id = f"spider-{threading.get_ident()}-{hash(current_url) % 10000}"
+                    self.thread_monitor.register_thread_start(thread_op_id)
                     
                     try:
                         # Implement exponential backoff for connection errors
@@ -856,7 +918,10 @@ class WebsiteSpider:
                         if verbose:
                             logging.error(f"Error visiting {current_url}: {e}")
                     
-                    url_queue.task_done()
+                    finally:
+                        # Always mark the thread operation as complete
+                        self.thread_monitor.register_thread_end(thread_op_id)
+                        url_queue.task_done()
                     
                 except Exception as e:
                     if verbose:
@@ -883,6 +948,10 @@ class WebsiteSpider:
         except Exception as e:
             if verbose:
                 logging.error(f"Spidering error: {e}")
+        
+        finally:
+            # Stop the thread monitor
+            self.thread_monitor.stop_monitoring()
             
         if self.interrupted:
             if verbose:
@@ -931,48 +1000,60 @@ class WebsiteSpider:
         # Retry delays for exponential backoff
         retry_delays = [2, 4, 8, 16, 32]
         
+        # Start the thread monitor
+        self.thread_monitor.start_monitoring()
+        
         def cache_url(url):
             nonlocal processed_count
             
             if self.interrupted:
                 return
-                
-            # Generate cache filename for checking
-            filename = self.cache_manager.url_to_filename(url) + ".html"
-                
-            # Fetch with retry
-            for retry, delay in enumerate(retry_delays):
-                if self.interrupted:
-                    return
-                    
-                try:
-                    response = requests.get(url, timeout=3)
-                    
-                    # Cache the content
-                    self.cache_manager.cache_content(url, response.text, is_sitemap=True)
-                    if self.verbose:
-                        logging.info(f"Successfully cached: {url}")
-                    break
-                except Exception as e:
-                    error_message = str(e).lower()
-                    if any(err in error_message for err in [
-                        'connection reset', 'connection timed out', 'timeout', 
-                        'recv failure', 'operation timed out'
-                    ]):
-                        if retry < len(retry_delays) - 1 and not self.interrupted:
-                            if self.verbose:
-                                logging.warning(f"Connection error caching {url}, retrying in {delay}s (attempt {retry+1}/{len(retry_delays)}): {e}")
-                            time.sleep(delay)
-                            continue
-                    if self.verbose:
-                        logging.error(f"Failed to cache {url}: {e}")
-                    break
             
-            # Update progress
-            with counter_lock:
-                processed_count += 1
-                if not self.verbose and pbar:
-                    pbar.update(1)
+            # Generate a unique ID for this thread operation
+            thread_op_id = f"cache-{threading.get_ident()}-{hash(url) % 10000}"
+            self.thread_monitor.register_thread_start(thread_op_id)
+            
+            try:
+                # Generate cache filename for checking
+                filename = self.cache_manager.url_to_filename(url) + ".html"
+                    
+                # Fetch with retry
+                for retry, delay in enumerate(retry_delays):
+                    if self.interrupted:
+                        return
+                        
+                    try:
+                        response = requests.get(url, timeout=3)
+                        
+                        # Cache the content
+                        self.cache_manager.cache_content(url, response.text, is_sitemap=True)
+                        if self.verbose:
+                            logging.info(f"Successfully cached: {url}")
+                        break
+                    except Exception as e:
+                        error_message = str(e).lower()
+                        if any(err in error_message for err in [
+                            'connection reset', 'connection timed out', 'timeout', 
+                            'recv failure', 'operation timed out'
+                        ]):
+                            if retry < len(retry_delays) - 1 and not self.interrupted:
+                                if self.verbose:
+                                    logging.warning(f"Connection error caching {url}, retrying in {delay}s (attempt {retry+1}/{len(retry_delays)}): {e}")
+                                time.sleep(delay)
+                                continue
+                        if self.verbose:
+                            logging.error(f"Failed to cache {url}: {e}")
+                        break
+            
+            finally:
+                # Always mark the thread operation as complete
+                self.thread_monitor.register_thread_end(thread_op_id)
+                
+                # Update progress
+                with counter_lock:
+                    processed_count += 1
+                    if not self.verbose and pbar:
+                        pbar.update(1)
         
         try:
             # Use ThreadPoolExecutor to process URLs in parallel
@@ -995,6 +1076,9 @@ class WebsiteSpider:
                 logging.error(f"Error in cache_missing_urls: {e}")
         
         finally:
+            # Stop the thread monitor
+            self.thread_monitor.stop_monitoring()
+            
             # Close progress bar if it exists
             if not self.verbose and pbar:
                 pbar.close()
@@ -1364,6 +1448,8 @@ def main():
     parser.add_argument('--ignore-categories-tags', action='store_true', help='Ignore WordPress category and tag URLs in the "missing from sitemap" report')
     parser.add_argument('--use-direct-cache', action='store_true', default=False,
                         help='Store cache files directly instead of in 7z archives (default: True)')
+    parser.add_argument('--thread-timeout', type=int, default=30, 
+                        help='Maximum time in seconds a thread can spend on a single URL (default: 30)')
     args = parser.parse_args()
 
     # Set up logging
