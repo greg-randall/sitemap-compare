@@ -79,8 +79,6 @@ python sitemap_comparison.py [-h] [--sitemap-url SITEMAP_URL] [--output-prefix O
 - `--ignore-pagination`: Ignore common pagination URLs in the "missing from sitemap" report
 - `--ignore-categories-tags`: Ignore WordPress category and tag URLs in the "missing from sitemap" report
 - `--thread-timeout`: Maximum time in seconds a thread can spend on a single URL (default: 30)
-- `--compress-cache`: Compress cache folders after processing and delete originals (default: True)
-- `--no-compress-cache`: Disable compression of cache folders after processing
 
 ### Examples
 
@@ -119,10 +117,6 @@ Ignore WordPress category and tag URLs in the missing from sitemap report:
 python sitemap_comparison.py https://example.com --ignore-categories-tags
 ```
 
-Disable cache compression (enabled by default):
-```
-python sitemap_comparison.py https://example.com --no-compress-cache
-```
 
 ## How It Works
 
@@ -149,12 +143,13 @@ python sitemap_comparison.py https://example.com --no-compress-cache
 
 The tool creates a directory structure under `sites/[domain]/[timestamp]/` containing:
 
-- `missing_from_sitemap.txt`: URLs found while crawling but not in the sitemap (potentially hidden content)
-- `missing_from_site.txt`: URLs in the sitemap that weren't found while crawling (possibly restricted content)
-- `all_sitemap_urls.txt`: All URLs extracted from the sitemap (what the site owner wants you to see)
-- `all_site_urls.txt`: All URLs discovered while crawling (what's actually there)
+- `missing_from_sitemap.csv`: URLs found while crawling but not in the sitemap (potentially hidden content)
+- `missing_from_site.csv`: URLs in the sitemap that weren't found while crawling (possibly restricted content)
+- `all_sitemap_urls.csv`: All URLs extracted from the sitemap (what the site owner wants you to see)
+- `all_site_urls.csv`: All URLs discovered while crawling (what's actually there)
 - `cache/`: Directory containing cached HTML content from crawled pages (for offline analysis)
 - `cache-xml/`: Directory containing cached sitemap XML files (for reference)
+- `results/`: Directory containing copies of the CSV files for easy access
 
 The most interesting findings are typically in the `missing_from_sitemap.txt` file, which may reveal:
 - Admin interfaces
