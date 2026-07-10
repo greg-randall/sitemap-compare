@@ -872,7 +872,11 @@ class WebsiteSpider:
                                 last_update_time = current_time
                     
                     if verbose:
-                        logging.info(f"Visiting {current_url} ({visited_count}/{max_pages})")
+                        logging.info(
+                            f"[tid={threading.get_ident()}] "
+                            f"Visiting {current_url} "
+                            f"({visited_count}/{max_pages}, queue={url_queue.qsize()})"
+                        )
                     
                     # Generate a unique ID for this thread operation
                     thread_op_id = f"spider-{threading.get_ident()}-{hash(current_url) % 10000}"
@@ -1101,7 +1105,7 @@ class WebsiteSpider:
                             response = requests.get(url, timeout=3)
                             self.cache_manager.cache_content(url, response.text, is_sitemap=False)
                             if self.verbose:
-                                logging.info(f"Successfully cached: {url}")
+                                logging.info(f"[tid={threading.get_ident()}] Successfully cached: {url}")
                             break
                         except Exception as e:
                             error_message = str(e).lower()
@@ -1134,7 +1138,7 @@ class WebsiteSpider:
                             )
                             self.cache_manager.cache_content(url, response.text, is_sitemap=False)
                             if self.verbose:
-                                logging.info(f"Successfully cached: {url}")
+                                logging.info(f"[tid={threading.get_ident()}] Successfully cached: {url}")
                             break
                         except Exception as e:
                             if retry < len(obscura_retries) - 1 and not self.interrupted:
