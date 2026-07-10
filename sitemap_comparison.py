@@ -1514,9 +1514,20 @@ class SitemapComparison:
                 if has_sitemap:
                     print(f"Found {len(in_sitemap_not_site)} URLs missing from site")
             
-            # Cache pages that are in sitemap but not found by site spider
+            # Cache pages that are in sitemap but not found by site spider.
+            # Respect --max-pages so a quick test run doesn't spend 25 minutes caching.
             if has_sitemap and in_sitemap_not_site:
-                self.website_spider.cache_missing_urls(in_sitemap_not_site)
+                urls_to_cache = in_sitemap_not_site
+                if len(urls_to_cache) > self.config.max_pages:
+                    if self.config.verbose:
+                        logging.info(
+                            f"Limiting cache to {self.config.max_pages} of "
+                            f"{len(urls_to_cache)} URLs (--max-pages limit)"
+                        )
+                    else:
+                        print(f"Capping cache at {self.config.max_pages} URLs (--max-pages limit)")
+                    urls_to_cache = set(sorted(urls_to_cache)[:self.config.max_pages])
+                self.website_spider.cache_missing_urls(urls_to_cache)
             
             # Compare with previous scan if requested
             if self.config.compare_previous:
