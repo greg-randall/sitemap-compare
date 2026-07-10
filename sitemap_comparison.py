@@ -1074,8 +1074,10 @@ class WebsiteSpider:
         # Use a thread-safe counter for progress tracking
         processed_count = 0
         counter_lock = threading.Lock()
-        
-        # Progress bar for non-verbose mode
+        cache_start = time.time()
+        last_report = 0  # last count when we logged an ETA line
+
+        # Progress bar for non-verbose mode (tqdm shows rate/ETA automatically)
         pbar = None
         if not self.verbose:
             pbar = tqdm(total=total_urls, desc="Caching URLs", unit="urls")
@@ -1086,98 +1088,103 @@ class WebsiteSpider:
         # Start the thread monitor
         self.thread_monitor.start_monitoring()
         
-        def cache_url(url):
-            nonlocal processed_count
-            
-            if self.interrupted:
-                return
-            
-            # Generate a unique ID for this thread operation
-            thread_op_id = f"cache-{threading.get_ident()}-{hash(url) % 10000}"
-            self.thread_monitor.register_thread_start(thread_op_id)
-            
-            try:
-                # Generate cache filename for checking
-                filename = self.cache_manager.url_to_filename(url) + ".html"
-                    
-                if self.config.curl_cffi:
-                    # Fallback: use curl_cffi with exponential backoff
-                    for retry, delay in enumerate(retry_delays):
-                        if self.interrupted:
-                            return
-                        try:
-                            response = requests.get(url, timeout=3)
-                            self.cache_manager.cache_content(url, response.text, is_sitemap=False)
-                            if self.verbose:
-                                logging.info(f"[tid={threading.get_ident()}] Successfully cached: {url}")
-                            break
-                        except Exception as e:
-                            error_message = str(e).lower()
-                            if any(err in error_message for err in [
-                                'connection reset', 'connection timed out', 'timeout',
-                                'recv failure', 'operation timed out'
-                            ]):
-                                if retry < len(retry_delays) - 1 and not self.interrupted:
-                                    if self.verbose:
-                                        logging.warning(f"Connection error caching {url}, retrying in {delay}s (attempt {retry+1}/{len(retry_delays)}): {e}")
-                                    time.sleep(delay)
-                                    continue
-                            if self.verbose:
-                                logging.error(f"Failed to cache {url}: {e}")
-                            break
-                else:
-                    # Default: use obscura for JavaScript rendering
-                    # Retry subprocess failures with short backoff.
-                    obscura_retries = [1, 2, 4]
-                    for retry, delay in enumerate(obscura_retries):
-                        if self.interrupted:
-                            return
-                        try:
-                            response = obscura_fetch(
-                                url=url,
-                                wait=self.config.obscura_wait,
-                                timeout=self.config.obscura_timeout,
-                                stealth=self.config.obscura_stealth,
-                                obscura_path=self.config.obscura_path
-                            )
-                            self.cache_manager.cache_content(url, response.text, is_sitemap=False)
-                            if self.verbose:
-                                logging.info(f"[tid={threading.get_ident()}] Successfully cached: {url}")
-                            break
-                        except Exception as e:
-                            if retry < len(obscura_retries) - 1 and not self.interrupted:
+        # Split URLs into one chunk per worker so each thread processes
+        # its batch sequentially without interleaving.  Same worker count,
+        # fewer executor submissions, cleaner progress tracking.
+        chunk_size = max(1, (total_urls + num_workers - 1) // num_workers)
+        chunks = [url_list[i:i + chunk_size] for i in range(0, total_urls, chunk_size)]
+
+        def cache_chunk(urls):
+            nonlocal processed_count, last_report
+
+            for url in urls:
+                if self.interrupted:
+                    return
+
+                thread_op_id = f"cache-{threading.get_ident()}-{hash(url) % 10000}"
+                self.thread_monitor.register_thread_start(thread_op_id)
+
+                try:
+                    if self.config.curl_cffi:
+                        for retry, delay in enumerate(retry_delays):
+                            if self.interrupted:
+                                return
+                            try:
+                                response = requests.get(url, timeout=3)
+                                self.cache_manager.cache_content(url, response.text, is_sitemap=False)
                                 if self.verbose:
-                                    logging.warning(
-                                        f"obscura error caching {url}, "
-                                        f"retrying in {delay}s (attempt {retry+1}/{len(obscura_retries)}): {e}"
-                                    )
-                                time.sleep(delay)
-                            else:
+                                    logging.info(f"[tid={threading.get_ident()}] Successfully cached: {url}")
+                                break
+                            except Exception as e:
+                                error_message = str(e).lower()
+                                if any(err in error_message for err in [
+                                    'connection reset', 'connection timed out', 'timeout',
+                                    'recv failure', 'operation timed out'
+                                ]):
+                                    if retry < len(retry_delays) - 1 and not self.interrupted:
+                                        if self.verbose:
+                                            logging.warning(
+                                                f"Connection error caching {url}, "
+                                                f"retrying in {delay}s (attempt {retry+1}/{len(retry_delays)}): {e}"
+                                            )
+                                        time.sleep(delay)
+                                        continue
                                 if self.verbose:
                                     logging.error(f"Failed to cache {url}: {e}")
-            
-            finally:
-                # Always mark the thread operation as complete
-                self.thread_monitor.register_thread_end(thread_op_id)
-                
-                # Update progress
-                with counter_lock:
-                    processed_count += 1
-                    if not self.verbose and pbar:
-                        pbar.update(1)
-        
+                                break
+                    else:
+                        obscura_retries = [1, 2, 4]
+                        for retry, delay in enumerate(obscura_retries):
+                            if self.interrupted:
+                                return
+                            try:
+                                response = obscura_fetch(
+                                    url=url,
+                                    wait=self.config.obscura_wait,
+                                    timeout=self.config.obscura_timeout,
+                                    stealth=self.config.obscura_stealth,
+                                    obscura_path=self.config.obscura_path
+                                )
+                                self.cache_manager.cache_content(url, response.text, is_sitemap=False)
+                                if self.verbose:
+                                    logging.info(f"[tid={threading.get_ident()}] Successfully cached: {url}")
+                                break
+                            except Exception as e:
+                                if retry < len(obscura_retries) - 1 and not self.interrupted:
+                                    if self.verbose:
+                                        logging.warning(
+                                            f"obscura error caching {url}, "
+                                            f"retrying in {delay}s (attempt {retry+1}/{len(obscura_retries)}): {e}"
+                                        )
+                                    time.sleep(delay)
+                                else:
+                                    if self.verbose:
+                                        logging.error(f"Failed to cache {url}: {e}")
+
+                finally:
+                    self.thread_monitor.register_thread_end(thread_op_id)
+                    with counter_lock:
+                        processed_count += 1
+                        if not self.verbose and pbar:
+                            pbar.update(1)
+                        elif self.verbose and processed_count - last_report >= 50:
+                            elapsed = time.time() - cache_start
+                            rate = processed_count / elapsed if elapsed > 0 else 0
+                            remaining = (total_urls - processed_count) / rate if rate > 0 else 0
+                            logging.info(
+                                f"Caching progress: {processed_count}/{total_urls} "
+                                f"({rate:.1f} urls/s, est. {remaining:.0f}s remaining)"
+                            )
+                            last_report = processed_count
+
         try:
-            # Use ThreadPoolExecutor to process URLs in parallel
             with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
-                # Submit all URLs to the executor
-                futures = [executor.submit(cache_url, url) for url in url_list]
-                
-                # Wait for all tasks to complete or for interruption
+                futures = [executor.submit(cache_chunk, chunk) for chunk in chunks]
                 for future in concurrent.futures.as_completed(futures):
                     if self.interrupted:
                         break
                     try:
-                        future.result()  # Get the result to catch any exceptions
+                        future.result()
                     except Exception as e:
                         if self.verbose:
                             logging.error(f"Error in worker thread: {e}")
