@@ -787,7 +787,6 @@ class WebsiteSpider:
         # Thread monitor signals interrupt when a worker exceeds the time limit
         self.thread_monitor = ThreadMonitor(
             max_thread_time=config.thread_timeout,
-            on_timeout=self.set_interrupted
         )
         
     def set_interrupted(self):
