@@ -837,16 +837,20 @@ class WebsiteSpider:
         
         def process_url():
             nonlocal visited_count, last_update_time, estimated_total
+            idle_since = None  # track persistent empty-queue for clean shutdown
             while not self.interrupted and visited_count < max_pages:
                 try:
-                    # Get URL with timeout to allow for interruption
-                    try:
-                        current_url, source_url = url_queue.get(timeout=1)  # Get URL and its source
-                    except queue.Empty:
-                        # If queue is empty, check if all workers are idle
-                        if url_queue.empty():
+                    current_url, source_url = url_queue.get(timeout=1)
+                    idle_since = None  # got work, reset idle timer
+                except queue.Empty:
+                    if url_queue.empty():
+                        now = time.time()
+                        if idle_since is None:
+                            idle_since = now
+                        elif now - idle_since > 3:
+                            # Queue has been empty for >3s — crawl is done.
                             break
-                        continue
+                    continue
                     
                     # Skip if already visited
                     with visited_lock:
