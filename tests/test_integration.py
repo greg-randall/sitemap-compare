@@ -119,12 +119,15 @@ def test_full_pipeline(test_site):
 
     # --- all_site_urls.csv ---
     site_urls = _read_urls(os.path.join(out, "all_site_urls.csv"))
-    # The spider discovers exactly 8 pages from the fixture
-    assert len(site_urls) == 8, (
-        f"Expected 8 spider-discovered URLs, got {len(site_urls)}: {site_urls}"
+    # 9 reachable pages — 8 real pages + /broken.html (returns a 404 error
+    # page, but the spider counts any HTML response as a discovered page).
+    assert len(site_urls) == 9, (
+        f"Expected 9 spider-discovered URLs, got {len(site_urls)}: {site_urls}"
     )
     assert any("/about.html" in u for u in site_urls)
     assert any("/products/a.html" in u for u in site_urls)
+    # Broken link appears because http.server serves a 404 HTML page
+    assert any("broken.html" in u for u in site_urls)
 
     # --- all_sitemap_urls.csv ---
     sitemap_urls = _read_urls(os.path.join(out, "all_sitemap_urls.csv"))
@@ -137,10 +140,12 @@ def test_full_pipeline(test_site):
 
     # --- missing_from_sitemap.csv ---
     missing_sitemap = _read_urls(os.path.join(out, "missing_from_sitemap.csv"))
-    # All spider-discovered URLs are in the sitemap — none missing
-    assert len(missing_sitemap) == 0, (
-        f"Expected 0 missing from sitemap, got {len(missing_sitemap)}: {missing_sitemap}"
+    # /broken.html is found by spider but not in sitemap
+    assert len(missing_sitemap) == 1, (
+        f"Expected 1 missing from sitemap (/broken.html), "
+        f"got {len(missing_sitemap)}: {missing_sitemap}"
     )
+    assert any("broken.html" in u for u in missing_sitemap)
 
     # --- missing_from_site.csv ---
     missing_site = _read_urls(os.path.join(out, "missing_from_site.csv"))
