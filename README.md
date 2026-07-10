@@ -2,9 +2,9 @@
 
 ## 1. What it is and why
 
-Most websites publish a sitemap — an XML file that tells search engines which pages exist. But sitemaps lie. They list pages that aren't reachable by following links, and they miss pages a visitor would actually find. These gaps matter. An unreachable page in your sitemap wastes crawl budget and frustrates users who land on 404s. A reachable page missing from your sitemap is invisible to search engines.
+Most websites publish a sitemap, an XML file that tells search engines which pages exist. Sitemaps lie. They list pages that aren't reachable by following links, and they miss pages a visitor would actually find. These gaps matter. An unreachable page in your sitemap wastes crawl budget and frustrates users who land on 404s. A reachable page missing from your sitemap is invisible to search engines.
 
-This tool finds both kinds of gaps. It reads your sitemap, crawls your site by following every link it can find (including links injected by JavaScript), then compares the two lists. The result is a pair of CSVs — pages in your sitemap that nobody can reach, and pages anyone can reach that your sitemap forgot. It also generates an interactive HTML report, caches every page it fetches for offline analysis, and compares scans over time so you can see whether things are getting better or worse.
+This tool finds both kinds of gaps. It reads your sitemap, crawls your site by following every link it can find (including links injected by JavaScript), then compares the two lists. The result is a pair of CSVs: pages in your sitemap that nobody can reach, and pages anyone can reach that your sitemap forgot. It also generates an interactive HTML report, caches every page it fetches for offline analysis, and compares scans over time so you can see whether things are getting better or worse.
 
 Run it on your own site to audit your SEO coverage. Run it on a competitor's site to map what they've published but haven't linked to. Run it on a site you're about to redesign so you know what's really there.
 
@@ -17,7 +17,7 @@ cd sitemap-compare
 pip install -r requirements.txt
 
 # Install obscura (JS-rendering headless browser)
-# Linux x86_64 — see https://github.com/h4ckf0r0day/obscura/releases for other platforms
+# Linux x86_64. See https://github.com/h4ckf0r0day/obscura/releases for other platforms
 curl -LO https://github.com/h4ckf0r0day/obscura/releases/latest/download/obscura-x86_64-linux.tar.gz
 tar xzf obscura-x86_64-linux.tar.gz
 sudo mv obscura obscura-worker /usr/local/bin/
@@ -57,11 +57,11 @@ python sitemap_comparison.py https://example.com --curl-cffi
 
 The tool does three things in sequence, then optionally compares against history.
 
-**First, it finds your sitemap.** It checks `/robots.txt` for a `Sitemap:` directive. If that fails, it probes about 40 common sitemap locations (`/sitemap.xml`, `/wp-sitemap.xml`, `/sitemap_index.xml`, and so on). Once found, it downloads the sitemap and extracts every URL inside `<loc>` tags. If the sitemap is an index (pointing to other sitemaps), it follows those too — recursively, with a guard against self-referential loops. It handles malformed XML, HTML sitemaps, and plain-text URL lists as fallbacks.
+**First, it finds your sitemap.** It checks `/robots.txt` for a `Sitemap:` directive. If that fails, it probes about 40 common sitemap locations (`/sitemap.xml`, `/wp-sitemap.xml`, `/sitemap_index.xml`, and so on). Once found, it downloads the sitemap and extracts every URL inside `<loc>` tags. If the sitemap is an index (pointing to other sitemaps), it follows those too, recursively, with a guard against self-referential loops. It handles malformed XML, HTML sitemaps, and plain-text URL lists as fallbacks.
 
-**Second, it crawls your site.** Starting from the homepage, it visits each page, extracts every `<a href>` link, and adds new URLs to a queue. It stays within the same domain, strips out binary files (images, PDFs, fonts), removes tracking parameters (`utm_source`, `fbclid`, `gclid`, and hundreds more) so it doesn't crawl the same page twice with different junk in the URL, and normalizes fragments. The crawl runs with four parallel workers by default, using obscura — a headless browser with a real V8 JavaScript engine — so links injected by client-side JS are discovered. If a worker stalls, a watchdog timer fires and the crawl shuts down gracefully rather than hanging. Pages that fail to load get three retries with a short backoff.
+**Second, it crawls your site.** Starting from the homepage, it visits each page, extracts every `<a href>` link, and adds new URLs to a queue. It stays within the same domain, strips out binary files (images, PDFs, fonts), removes tracking parameters (`utm_source`, `fbclid`, `gclid`, and hundreds more) so it doesn't crawl the same page twice with different junk in the URL, and normalizes fragments. The crawl runs with four parallel workers by default, using obscura, a headless browser with a real V8 JavaScript engine, so links injected by client-side JS are discovered. If a worker stalls, a watchdog timer fires and the crawl shuts down gracefully rather than hanging. Pages that fail to load get three retries with a short backoff.
 
-**Third, it compares the two lists.** Sitemap URLs are normalized (domain lowercased, trailing slashes and query strings stripped) and compared against the normalized crawl URLs. The difference produces two CSVs: *missing from sitemap* (pages found by crawling but absent from the sitemap) and *missing from site* (pages the sitemap declares but the crawler couldn't reach). The tool then fetches and caches every URL in the second category — these are the interesting ones, the pages that exist on the server but aren't linked from anywhere a visitor would find.
+**Third, it compares the two lists.** Sitemap URLs are normalized (domain lowercased, trailing slashes and query strings stripped) and compared against the normalized crawl URLs. The difference produces two CSVs: *missing from sitemap* (pages found by crawling but absent from the sitemap) and *missing from site* (pages the sitemap declares but the crawler couldn't reach). The tool then fetches and caches every URL in the second category. These are the interesting ones: pages that exist on the server but aren't linked from anywhere a visitor would find.
 
 **Optionally**, if a previous scan of the same domain exists, it runs a historical comparison, flagging which issues are new and which have been fixed since last time.
 
@@ -133,7 +133,7 @@ python sitemap_comparison.py <start_url> [options]
 | `--max-pages` | 10000 | Maximum pages to crawl before stopping |
 | `--verbose` | off | Enable verbose logging |
 | `--compare-previous` | on | Compare with the most recent previous scan |
-| `--no-compare-previous` | — | Skip historical comparison |
+| `--no-compare-previous` | - | Skip historical comparison |
 | `--ignore-pagination` | off | Filter out pagination URLs from results |
 | `--ignore-categories-tags` | off | Filter out WordPress category/tag URLs |
 | `--thread-timeout` | 30 | Seconds before a stuck worker triggers shutdown |
@@ -159,7 +159,7 @@ pip install pytest pytest-mock
 python -m pytest tests/ -v
 ```
 
-132 tests across 8 modules. No network access required — all HTTP and subprocess calls are mocked.
+132 tests across 8 modules. No network access required. All HTTP and subprocess calls are mocked.
 
 ### Extending
 
@@ -170,4 +170,4 @@ python -m pytest tests/ -v
 
 ## License
 
-[MIT License](LICENSE)
+[GNU LGPL 2.1](LICENSE)
