@@ -1,7 +1,11 @@
 .aider*
 */*
+!tests/
+!tests/**
 sites/
 reports/*
+crawl_*.log
 *.7z
 *.zip
 *.csv
+__pycache__/

@@ -1,4 +1,15 @@
+# Python dependencies:
 curl_cffi>=0.5.7
 beautifulsoup4>=4.12.0
 tqdm>=4.65.0
 pytz>=2023.3
+courlan>=1.0.0
+
+# Dev dependencies (testing):
+# pytest>=9.0
+# pytest-mock>=3.14
+
+# Note: obscura (Rust headless browser, ~79MB binary) is also required for JavaScript
+# rendering during crawling. Download from https://github.com/h4ckf0r0day/obscura/releases
+# and place the binary in your PATH, or specify its location with --obscura-path.
+# To crawl without obscura (no JS rendering), use the --curl-cffi flag.

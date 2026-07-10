@@ -70,10 +70,18 @@ Additionally, from a security perspective, it can help identify:
    cd sitemap-comparison
    ```
 
-2. Install dependencies:
+2. Install Python dependencies:
    ```
    pip install -r requirements.txt
    ```
+
+3. Install obscura (JavaScript-rendering headless browser):
+   - Download the latest binary from [obscura releases](https://github.com/h4ckf0r0day/obscura/releases)
+   - Place it in your PATH (e.g., `~/.local/bin/`)
+   - Make it executable: `chmod +x /path/to/obscura`
+   - Verify: `obscura --version`
+
+   > **Note:** obscura is a standalone Rust binary (~79MB), not a Python package. It renders JavaScript for more complete page crawling but is not installed via pip. If obscura is unavailable, use the `--curl-cffi` flag to fall back to static HTTP requests.
 
 ## Usage
 
@@ -108,6 +116,12 @@ python sitemap_comparison.py [-h] [--sitemap-url SITEMAP_URL] [--output-prefix O
 - `--ignore-pagination`: Ignore common pagination URLs in the "missing from sitemap" report
 - `--ignore-categories-tags`: Ignore WordPress category and tag URLs in the "missing from sitemap" report
 - `--thread-timeout`: Maximum time in seconds a thread can spend on a single URL (default: 30)
+- `--obscura-path`: Path to the obscura binary (default: "obscura" from PATH)
+- `--obscura-wait`: Additional seconds to wait after page load before dumping HTML (default: 1)
+- `--obscura-wait-until`: When to consider the page loaded — `load`, `domcontentloaded`, or `networkidle` (default: `load`)
+- `--obscura-timeout`: Subprocess timeout for each obscura call in seconds (default: same as `--thread-timeout`)
+- `--obscura-stealth-disable`: Disable obscura stealth mode (stealth is ON by default — TLS impersonation + tracker blocking)
+- `--curl-cffi`: Use curl_cffi instead of obscura for crawling and caching (fallback for when obscura is unavailable)
 
 ### Examples
 

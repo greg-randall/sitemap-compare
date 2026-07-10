@@ -9,15 +9,90 @@ import xml.etree.ElementTree as ET
 from curl_cffi import requests
 from bs4 import BeautifulSoup
 import logging
-import html
 import queue
 import threading
 import os
 import datetime
 import time
+import subprocess
 import hashlib
 from tqdm import tqdm
 import csv
+import courlan
+
+
+class ObscuraResponse:
+    """Response-like object wrapping obscura's stdout HTML output.
+
+    Provides .text and .headers attributes compatible with the existing
+    code's expectations from requests.get().
+    """
+    def __init__(self, text, status_code=200):
+        self.text = text
+        self.status_code = status_code
+        # Mock headers: obscura --dump html always returns rendered HTML
+        self._headers = {'Content-Type': 'text/html; charset=utf-8'}
+
+    @property
+    def headers(self):
+        return self._headers
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise Exception(f"HTTP status {self.status_code}")
+
+
+def obscura_fetch(url, wait=1, wait_until="load", timeout=30, stealth=False, obscura_path="obscura"):
+    """Fetch a URL using the obscura headless browser CLI.
+
+    Renders JavaScript and returns the resulting HTML as a response-like object.
+
+    Args:
+        url: The URL to fetch.
+        wait: Additional seconds to wait after the page load event (--wait flag).
+        wait_until: When to consider the page loaded (load | domcontentloaded | networkidle).
+        timeout: Subprocess wall-clock timeout in seconds.
+        stealth: Enable stealth mode (TLS impersonation + tracker blocking).
+        obscura_path: Path to the obscura binary (default: "obscura" from PATH).
+
+    Returns:
+        ObscuraResponse with .text (rendered HTML) and .headers.
+
+    Raises:
+        Exception: On missing binary, non-zero exit, or subprocess timeout.
+    """
+    cmd = [obscura_path, "fetch", url, "--dump", "html",
+           "--wait", str(wait), "--wait-until", wait_until, "-q"]
+    if stealth:
+        cmd.append("--stealth")
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout
+        )
+    except FileNotFoundError:
+        raise Exception(
+            f"obscura binary not found at '{obscura_path}'. "
+            f"Install from https://github.com/h4ckf0r0day/obscura/releases "
+            f"or use --curl-cffi to fall back to curl_cffi."
+        )
+    except subprocess.TimeoutExpired:
+        raise Exception(
+            f"obscura timed out after {timeout}s fetching {url}"
+        )
+
+    if result.returncode != 0:
+        stderr = (result.stderr or "").strip()
+        raise Exception(
+            f"obscura exited with code {result.returncode} for {url}: "
+            f"{stderr or 'Unknown error'}"
+        )
+
+    return ObscuraResponse(result.stdout)
+
 
 # Global constants for file extensions to skip
 SKIP_EXTENSIONS = [
@@ -50,62 +125,65 @@ SKIP_QUERY_PARAMS = ['?replytocom=', '?share=', '?like=', '?print=']
 
 
 class ThreadMonitor:
-    def __init__(self, max_thread_time=60):  # Default 60 seconds max per thread
+    def __init__(self, max_thread_time=60, on_timeout=None):
         self.max_thread_time = max_thread_time
         self.thread_start_times = {}
         self.thread_lock = threading.Lock()
         self.monitor_running = False
         self.monitor_thread = None
-    
+        self.on_timeout = on_timeout  # Called when a thread exceeds the time limit
+
     def start_monitoring(self):
-        """Start the monitoring thread"""
+        """Start the monitoring thread."""
         self.monitor_running = True
         self.monitor_thread = threading.Thread(target=self._monitor_threads, daemon=True)
         self.monitor_thread.start()
-    
+
     def stop_monitoring(self):
-        """Stop the monitoring thread"""
+        """Stop the monitoring thread."""
         self.monitor_running = False
         if self.monitor_thread:
             self.monitor_thread.join(timeout=1.0)
-    
+
     def register_thread_start(self, thread_id):
-        """Register the start time of a thread operation"""
+        """Register the start time of a thread operation."""
         with self.thread_lock:
             self.thread_start_times[thread_id] = time.time()
-    
+
     def register_thread_end(self, thread_id):
-        """Register the completion of a thread operation"""
+        """Register the completion of a thread operation."""
         with self.thread_lock:
             if thread_id in self.thread_start_times:
                 del self.thread_start_times[thread_id]
-    
+
     def _monitor_threads(self):
-        """Monitor thread that checks for stuck threads"""
+        """Monitor thread that detects stuck operations and fires the timeout callback."""
         while self.monitor_running:
             current_time = time.time()
             stuck_threads = []
-            
+
             with self.thread_lock:
                 for thread_id, start_time in list(self.thread_start_times.items()):
                     elapsed = current_time - start_time
                     if elapsed > self.max_thread_time:
                         stuck_threads.append((thread_id, elapsed))
-                        # Remove from tracking to avoid repeated warnings
                         del self.thread_start_times[thread_id]
-            
-            # Log any stuck threads
+
             for thread_id, elapsed in stuck_threads:
-                logging.warning(f"Thread {thread_id} exceeded time limit! Running for {elapsed:.1f}s (limit: {self.max_thread_time}s)")
-            
-            # Sleep for a short time before checking again
+                logging.warning(
+                    f"Thread {thread_id} exceeded time limit! "
+                    f"Running for {elapsed:.1f}s (limit: {self.max_thread_time}s) — "
+                    f"signalling interrupt"
+                )
+                if self.on_timeout:
+                    self.on_timeout()
+
             time.sleep(1.0)
 
 class Config:
     def __init__(self, args):
         self.start_url = args.start_url
         self.sitemap_url = args.sitemap_url
-        self.output_prefix = args.output_prefix
         self.workers = args.workers
         self.max_pages = args.max_pages
         self.verbose = args.verbose
@@ -113,7 +191,13 @@ class Config:
         self.ignore_pagination = args.ignore_pagination
         self.ignore_categories_tags = args.ignore_categories_tags
         self.thread_timeout = args.thread_timeout
-        
+        self.obscura_path = getattr(args, 'obscura_path', 'obscura')
+        self.obscura_wait = getattr(args, 'obscura_wait', 1)
+        self.obscura_wait_until = getattr(args, 'obscura_wait_until', 'load')
+        self.obscura_timeout = getattr(args, 'obscura_timeout', None) or self.thread_timeout
+        self.obscura_stealth = not getattr(args, 'obscura_stealth_disable', False)
+        self.curl_cffi = getattr(args, 'curl_cffi', False)
+
         # Parse domain from URL
         self.domain = urlparse(self.start_url).netloc
         
@@ -170,7 +254,6 @@ class UrlProcessor:
             r'/page/\d+/?$',           # /page/2/
             r'/p/\d+/?$',              # /p/2/
             r'/page-\d+/?$',           # /page-2/
-            r'/\d+/?$',                # /2/
             r'\?page=\d+$',            # ?page=2
             r'\?p=\d+$',               # ?p=2
             r'\?pg=\d+$',              # ?pg=2
@@ -277,7 +360,7 @@ class CacheManager:
             if self.verbose:
                 logging.warning(f"Failed to cache content for {url}: {e}")
     
-    def compress_output_files(self):
+    def copy_output_files(self):
         """Copy output CSV files to a results directory."""
         # List of CSV files to copy
         csv_files = [
@@ -339,7 +422,10 @@ class SitemapFetcher:
         self.cache_manager = cache_manager
         self.url_processor = url_processor
         self.verbose = config.verbose
-        
+        # Track sitemap URLs already fetched to avoid infinite recursion on
+        # self-referential or circular sitemaps (e.g. a sitemap that lists itself)
+        self.visited_sitemaps = set()
+
     def discover_sitemap_url(self):
         """Try to automatically discover the sitemap URL."""
         base_url = self.config.start_url
@@ -414,7 +500,7 @@ class SitemapFetcher:
                             print(f"Found sitemap in robots.txt: {sitemap_url}")
                     
                         # Cache the robots.txt file
-                        self.cache_manager.cache_content(robots_url, response.text, is_sitemap=True)
+                        self.cache_manager.cache_content(robots_url, response.text, is_sitemap=False)
                         return sitemap_url
         except Exception as e:
             if verbose:
@@ -496,6 +582,13 @@ class SitemapFetcher:
 
     def get_sitemap_urls(self, sitemap_url):
         """Extract all URLs from a sitemap, handling different formats and recursion."""
+        # Guard against infinite recursion on self-referential or circular sitemaps
+        if sitemap_url in self.visited_sitemaps:
+            if self.verbose:
+                logging.info(f"Skipping already-visited sitemap: {sitemap_url}")
+            return set(), {}
+        self.visited_sitemaps.add(sitemap_url)
+
         if self.verbose:
             logging.info(f"Fetching sitemap from {sitemap_url}")
         urls = set()
@@ -516,16 +609,16 @@ class SitemapFetcher:
                 if self.verbose:
                     logging.info(f"Found {len(loc_urls)} URLs using direct <loc> tag extraction")
                 
-                # Check if any of these are sitemaps themselves
+                # Check if any of these are sub-sitemaps
                 sitemap_urls = [url for url in loc_urls if (
-                    # Check for common sitemap indicators in the URL
-                    ('sitemap' in url.lower() or 'site-map' in url.lower() or 'site_map' in url.lower()) or
-                    # Check for common sitemap file extensions
-                    url.lower().endswith(('.xml', '.xml.gz', '.gz', '.txt')) or
-                    # Check for URL patterns that might indicate a sitemap
-                    ('/sitemap/' in url.lower() or '/sitemaps/' in url.lower() or 
-                     '/sitemap_' in url.lower() or '/sitemap-' in url.lower())
-                ) and not url.endswith(('.css', '.js', '.jpg', '.jpeg', '.png', '.gif'))]  # Exclude obvious non-sitemap files
+                    # Must end in a sitemap file extension (most reliable signal)
+                    url.lower().endswith(('.xml', '.xml.gz'))
+                    # Or be a known sitemap directory/index path
+                    or any(p in url.lower() for p in (
+                        '/sitemap.xml', '/sitemap_index.xml', '/sitemap-index.xml',
+                        '/sitemap/', '/sitemaps/',
+                    ))
+                ) and not url.lower().endswith(('.css', '.js', '.jpg', '.jpeg', '.png', '.gif', '.svg', '.ico'))]
                 
                 if sitemap_urls:
                     if self.verbose:
@@ -675,8 +768,11 @@ class WebsiteSpider:
         self.url_processor = url_processor
         self.verbose = config.verbose
         self.interrupted = False
-        # Add thread monitor with configurable timeout
-        self.thread_monitor = ThreadMonitor(max_thread_time=config.thread_timeout)
+        # Thread monitor signals interrupt when a worker exceeds the time limit
+        self.thread_monitor = ThreadMonitor(
+            max_thread_time=config.thread_timeout,
+            on_timeout=self.set_interrupted
+        )
         
     def set_interrupted(self):
         """Set the interrupted flag."""
@@ -767,35 +863,60 @@ class WebsiteSpider:
                     self.thread_monitor.register_thread_start(thread_op_id)
                     
                     try:
-                        # Implement exponential backoff for connection errors
-                        retry_delays = [2, 4, 8, 16, 32]
-                        response = None
-                        last_error = None
-                        
-                        for retry, delay in enumerate(retry_delays):
-                            try:
-                                response = requests.get(current_url, timeout=3)
-                                break  # Success, exit retry loop
-                            except Exception as e:
-                                last_error = e
-                                error_message = str(e).lower()
-                                
-                                # Only retry for connection-related errors
-                                if any(err in error_message for err in [
-                                    'connection reset', 'connection timed out', 'timeout', 
-                                    'recv failure', 'operation timed out'
-                                ]):
-                                    if retry < len(retry_delays) - 1:  # Don't log on last attempt
+                        if self.config.curl_cffi:
+                            # Fallback: use curl_cffi with exponential backoff
+                            retry_delays = [2, 4, 8, 16, 32]
+                            response = None
+                            last_error = None
+                            for retry, delay in enumerate(retry_delays):
+                                try:
+                                    response = requests.get(current_url, timeout=3)
+                                    break
+                                except Exception as e:
+                                    last_error = e
+                                    error_message = str(e).lower()
+                                    if any(err in error_message for err in [
+                                        'connection reset', 'connection timed out', 'timeout',
+                                        'recv failure', 'operation timed out'
+                                    ]):
+                                        if retry < len(retry_delays) - 1:
+                                            if verbose:
+                                                logging.warning(f"Connection error on {current_url}, retrying in {delay}s (attempt {retry+1}/{len(retry_delays)}): {e}")
+                                            time.sleep(delay)
+                                            continue
+                                    raise
+                            if response is None:
+                                raise last_error
+                        else:
+                            # Default: use obscura for JavaScript rendering
+                            # Retry subprocess failures (crash, timeout) with short backoff.
+                            # obscura handles HTTP-level retry internally.
+                            obscura_retries = [1, 2, 4]
+                            response = None
+                            last_error = None
+                            for retry, delay in enumerate(obscura_retries):
+                                try:
+                                    response = obscura_fetch(
+                                        url=current_url,
+                                        wait=self.config.obscura_wait,
+                                        wait_until=self.config.obscura_wait_until,
+                                        timeout=self.config.obscura_timeout,
+                                        stealth=self.config.obscura_stealth,
+                                        obscura_path=self.config.obscura_path
+                                    )
+                                    break
+                                except Exception as e:
+                                    last_error = e
+                                    if retry < len(obscura_retries) - 1:
                                         if verbose:
-                                            logging.warning(f"Connection error on {current_url}, retrying in {delay}s (attempt {retry+1}/{len(retry_delays)}): {e}")
+                                            logging.warning(
+                                                f"obscura error on {current_url}, "
+                                                f"retrying in {delay}s "
+                                                f"(attempt {retry+1}/{len(obscura_retries)}): {e}"
+                                            )
                                         time.sleep(delay)
-                                        continue
-                                # For non-connection errors or last retry, don't retry
-                                raise
-                        
-                        # If we exhausted all retries
-                        if response is None:
-                            raise last_error
+                            if response is None:
+                                raise last_error
                         
                         with found_lock:
                             found_urls.add(current_url)
@@ -832,16 +953,19 @@ class WebsiteSpider:
                             href = link['href']
                             full_url = urljoin(current_url, href)
                             
-                            # Skip non-HTTP URLs, fragments, and external domains
+                            # Skip non-HTTP URLs and external domains
                             parsed_url = urlparse(full_url)
-                            if (parsed_url.scheme not in ('http', 'https') or 
-                                parsed_url.netloc != base_domain or 
-                                '#' in full_url):
+                            if (parsed_url.scheme not in ('http', 'https') or
+                                parsed_url.netloc != base_domain):
                                 continue
-                                
+
                             # Remove fragments
                             clean_url = full_url.split('#')[0]
-                            
+
+                            # Strip tracking query parameters (utm_*, fbclid, gclid, etc.)
+                            # before dedup so we don't crawl the same page multiple times
+                            clean_url = courlan.clean_url(clean_url)
+
                             # Skip binary and non-HTML file types before adding to queue
                             path = parsed_url.path.lower()
                             if any(path.endswith(ext) for ext in SKIP_EXTENSIONS):
@@ -872,23 +996,13 @@ class WebsiteSpider:
                         logging.error(f"Worker error: {e}")
         
         try:
-            # Create and start worker threads
+            # Create and start worker threads.
+            # Workers self-terminate when the queue is empty or interrupted.
+            # The executor's context manager waits for all submitted tasks.
             with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
-                workers = [executor.submit(process_url) for _ in range(num_workers)]
-                
-                # Wait for all tasks to complete or for interruption
-                while not self.interrupted and visited_count < max_pages and not url_queue.empty():
-                    # Check if all workers are done
-                    if all(worker.done() for worker in workers):
-                        break
-                    # Sleep briefly to avoid busy waiting
-                    threading.Event().wait(0.1)
-                
-                # If interrupted, cancel remaining workers
-                if self.interrupted:
-                    for worker in workers:
-                        worker.cancel()
-        
+                for _ in range(num_workers):
+                    executor.submit(process_url)
+
         except Exception as e:
             if verbose:
                 logging.error(f"Spidering error: {e}")
@@ -961,33 +1075,61 @@ class WebsiteSpider:
                 # Generate cache filename for checking
                 filename = self.cache_manager.url_to_filename(url) + ".html"
                     
-                # Fetch with retry
-                for retry, delay in enumerate(retry_delays):
-                    if self.interrupted:
-                        return
-                        
-                    try:
-                        response = requests.get(url, timeout=3)
-                        
-                        # Cache the content
-                        self.cache_manager.cache_content(url, response.text, is_sitemap=True)
-                        if self.verbose:
-                            logging.info(f"Successfully cached: {url}")
-                        break
-                    except Exception as e:
-                        error_message = str(e).lower()
-                        if any(err in error_message for err in [
-                            'connection reset', 'connection timed out', 'timeout', 
-                            'recv failure', 'operation timed out'
-                        ]):
-                            if retry < len(retry_delays) - 1 and not self.interrupted:
+                if self.config.curl_cffi:
+                    # Fallback: use curl_cffi with exponential backoff
+                    for retry, delay in enumerate(retry_delays):
+                        if self.interrupted:
+                            return
+                        try:
+                            response = requests.get(url, timeout=3)
+                            self.cache_manager.cache_content(url, response.text, is_sitemap=False)
+                            if self.verbose:
+                                logging.info(f"Successfully cached: {url}")
+                            break
+                        except Exception as e:
+                            error_message = str(e).lower()
+                            if any(err in error_message for err in [
+                                'connection reset', 'connection timed out', 'timeout',
+                                'recv failure', 'operation timed out'
+                            ]):
+                                if retry < len(retry_delays) - 1 and not self.interrupted:
+                                    if self.verbose:
+                                        logging.warning(f"Connection error caching {url}, retrying in {delay}s (attempt {retry+1}/{len(retry_delays)}): {e}")
+                                    time.sleep(delay)
+                                    continue
+                            if self.verbose:
+                                logging.error(f"Failed to cache {url}: {e}")
+                            break
+                else:
+                    # Default: use obscura for JavaScript rendering
+                    # Retry subprocess failures with short backoff.
+                    obscura_retries = [1, 2, 4]
+                    for retry, delay in enumerate(obscura_retries):
+                        if self.interrupted:
+                            return
+                        try:
+                            response = obscura_fetch(
+                                url=url,
+                                wait=self.config.obscura_wait,
+                                timeout=self.config.obscura_timeout,
+                                stealth=self.config.obscura_stealth,
+                                obscura_path=self.config.obscura_path
+                            )
+                            self.cache_manager.cache_content(url, response.text, is_sitemap=False)
+                            if self.verbose:
+                                logging.info(f"Successfully cached: {url}")
+                            break
+                        except Exception as e:
+                            if retry < len(obscura_retries) - 1 and not self.interrupted:
                                 if self.verbose:
-                                    logging.warning(f"Connection error caching {url}, retrying in {delay}s (attempt {retry+1}/{len(retry_delays)}): {e}")
+                                    logging.warning(
+                                        f"obscura error caching {url}, "
+                                        f"retrying in {delay}s (attempt {retry+1}/{len(obscura_retries)}): {e}"
+                                    )
                                 time.sleep(delay)
-                                continue
-                        if self.verbose:
-                            logging.error(f"Failed to cache {url}: {e}")
-                        break
+                            else:
+                                if self.verbose:
+                                    logging.error(f"Failed to cache {url}: {e}")
             
             finally:
                 # Always mark the thread operation as complete
@@ -1354,7 +1496,7 @@ class SitemapComparison:
                 self.comparison_analyzer.compare_with_previous()
             
             # Compress output files
-            self.cache_manager.compress_output_files()
+            self.cache_manager.copy_output_files()
             
             if self.config.verbose:
                 logging.info("Comparison complete!")
@@ -1383,15 +1525,30 @@ def main():
     parser = argparse.ArgumentParser(description='Compare sitemap URLs with URLs found by spidering a website')
     parser.add_argument('start_url', help='The URL to start spidering from')
     parser.add_argument('--sitemap-url', help='The URL of the sitemap (optional, will try to discover if not provided)')
-    parser.add_argument('--output-prefix', default='comparison_results', help='Prefix for output files')
     parser.add_argument('--workers', type=int, default=4, help='Number of parallel workers for spidering (default: 4)')
     parser.add_argument('--max-pages', type=int, default=10000, help='Maximum number of pages to spider (default: 10000)')
     parser.add_argument('--verbose', action='store_true', help='Enable verbose logging output')
-    parser.add_argument('--compare-previous', action='store_true', default=True, help='Compare results with the most recent previous scan of the same site (default: True)')
+    parser.add_argument('--compare-previous', action='store_true', default=True, dest='compare_previous',
+                        help='Compare results with the most recent previous scan (default: True)')
+    parser.add_argument('--no-compare-previous', action='store_false', dest='compare_previous',
+                        help='Skip comparison with previous scans')
     parser.add_argument('--ignore-pagination', action='store_true', help='Ignore common pagination URLs in the "missing from sitemap" report')
     parser.add_argument('--ignore-categories-tags', action='store_true', help='Ignore WordPress category and tag URLs in the "missing from sitemap" report')
-    parser.add_argument('--thread-timeout', type=int, default=30, 
+    parser.add_argument('--thread-timeout', type=int, default=30,
                         help='Maximum time in seconds a thread can spend on a single URL (default: 30)')
+    parser.add_argument('--obscura-path', default='obscura',
+                        help='Path to the obscura binary (default: "obscura" from PATH)')
+    parser.add_argument('--obscura-wait', type=int, default=1,
+                        help='Additional seconds to wait after page load before dumping HTML (default: 1)')
+    parser.add_argument('--obscura-wait-until', default='load',
+                        choices=['load', 'domcontentloaded', 'networkidle'],
+                        help='When to consider the page loaded: load, domcontentloaded, or networkidle (default: load)')
+    parser.add_argument('--obscura-timeout', type=int, default=None,
+                        help='Subprocess timeout for each obscura call in seconds (default: same as --thread-timeout)')
+    parser.add_argument('--obscura-stealth-disable', action='store_true',
+                        help='Disable obscura stealth mode (stealth is ON by default)')
+    parser.add_argument('--curl-cffi', action='store_true',
+                        help='Use curl_cffi instead of obscura for crawling and caching (fallback)')
     args = parser.parse_args()
 
     # Set up logging
