@@ -12,8 +12,8 @@ class TestNormalizeUrl:
         ("https://www.example.com/about/", "https://www.example.com/about"),
         ("https://www.example.com/", "https://www.example.com/"),
         # Domain lowercasing
-        ("https://www.EXAMPLE.COM/About", "https://www.example.com/About"),
-        ("HTTPS://WWW.EXAMPLE.COM/Path", "https://www.example.com/Path"),
+        ("https://www.EXAMPLE.COM/About", "https://www.example.com/about"),
+        ("HTTPS://WWW.EXAMPLE.COM/Path", "https://www.example.com/path"),
         # Query string stripping
         ("https://www.example.com/page?utm_source=foo", "https://www.example.com/page"),
         ("https://www.example.com/page?page=2&ref=nav", "https://www.example.com/page"),
@@ -21,7 +21,7 @@ class TestNormalizeUrl:
         ("https://www.example.com/page#section", "https://www.example.com/page"),
         ("https://www.example.com/page#", "https://www.example.com/page"),
         # Combined
-        ("https://www.EXAMPLE.COM/About/?utm=foo#top", "https://www.example.com/About"),
+        ("https://www.EXAMPLE.COM/About/?utm=foo#top", "https://www.example.com/about"),
         # No path (just domain)
         ("https://www.example.com", "https://www.example.com/"),
         # Empty path edge case
@@ -149,11 +149,9 @@ class TestFilterUrls:
             "https://www.example.com/style.css",
         ]
         result = url_processor.filter_urls(urls)
-        # /About (domain lowered, trailing slash removed) and /about (domain lowered)
-        # are distinct because normalize_url does not lowercase the path
-        assert "https://www.example.com/About" in result
+        # /About and /about both normalize to the same lowercase path
         assert "https://www.example.com/about" in result
-        assert len(result) == 2  # two unique URLs (.css filtered, one duplicate removed)
+        assert len(result) == 1  # one unique URL (.css filtered, two /about variants deduped)
 
     def test_pagination_filter(self, pagination_config):
         from sitemap_comparison import UrlProcessor

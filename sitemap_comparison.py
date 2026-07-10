@@ -233,19 +233,25 @@ class UrlProcessor:
     def normalize_url(self, url):
         """Normalize URL to avoid duplicates due to trivial differences."""
         parsed = urlparse(url)
-        
+
         # Remove trailing slash if present
         path = parsed.path
         if path.endswith('/') and path != '/':
             path = path[:-1]
         elif not path:
             path = '/'
-            
-        # Lowercase the domain
+
+        # Lowercase the domain and path (URL paths are case-insensitive
+        # on most servers, and sites commonly mix case)
         netloc = parsed.netloc.lower()
-        
+        path = path.lower()
+
+        # Force https — we always connect via HTTPS, and sites that
+        # have internal http:// links point to the same pages
+        scheme = 'https'
+
         # Reconstruct URL without query parameters and fragments
-        return f"{parsed.scheme}://{netloc}{path}"
+        return f"{scheme}://{netloc}{path}"
     
     def is_valid_url(self, url):
         """Check if a URL is valid and should be included in results."""
