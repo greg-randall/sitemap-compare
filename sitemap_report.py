@@ -19,12 +19,16 @@ import webbrowser
 import argparse
 import shutil
 import json
+import html
+
+_h = html.escape  # escape user-supplied text before embedding in HTML
+
 
 def timestamp_to_datetime(ts):
     """Convert a timestamp string to a datetime object for sorting."""
     try:
         return datetime.datetime.strptime(ts, "%m-%d-%Y_%I-%M%p")
-    except:
+    except (ValueError, TypeError):
         # Return a very old date for timestamps that don't match the format
         return datetime.datetime(1900, 1, 1)
 
@@ -39,21 +43,15 @@ def parse_args():
                         help='Enable verbose output for debugging')
     return parser.parse_args()
 
-def generate_site_reports(output_dir="reports", open_browser=True, verbose=False):
+def generate_site_reports(output_dir="reports", open_browser=False, verbose=False):
     """Generate HTML reports for all sites in the sites directory."""
     if verbose:
         print(f"Starting report generation in directory: {output_dir}")
-        
-    # Create the reports directory if it doesn't exist
+
     reports_dir = output_dir
-    if os.path.exists(reports_dir):
-        # Clean up old reports
-        if verbose:
-            print(f"Cleaning up existing reports directory: {reports_dir}")
-        shutil.rmtree(reports_dir)
     os.makedirs(reports_dir, exist_ok=True)
-    
-    # Copy the CSS file to the reports directory
+
+    # Copy the CSS file to the reports directory (overwrites if exists)
     shutil.copy("style.css", os.path.join(reports_dir, "style.css"))
     
     # Check if sites directory exists
@@ -93,10 +91,8 @@ def generate_site_reports(output_dir="reports", open_browser=True, verbose=False
             if os.path.isdir(scan_dir):
                 # Check if this scan has the necessary files
                 has_required_files = (
-                    os.path.exists(os.path.join(scan_dir, "missing_from_site.csv")) or 
-                    os.path.exists(os.path.join(scan_dir, "missing_from_site.txt")) or
-                    os.path.exists(os.path.join(scan_dir, "missing_from_sitemap.csv")) or
-                    os.path.exists(os.path.join(scan_dir, "missing_from_sitemap.txt"))
+                    os.path.exists(os.path.join(scan_dir, "missing_from_site.csv")) and
+                    os.path.exists(os.path.join(scan_dir, "missing_from_sitemap.csv"))
                 )
                 if has_required_files:
                     timestamps.append(item)
@@ -142,7 +138,7 @@ def generate_site_reports(output_dir="reports", open_browser=True, verbose=False
     if open_browser:
         try:
             webbrowser.open_new_tab(f"file://{os.path.abspath(index_path)}")
-        except:
+        except Exception:
             print("Could not open browser automatically.")
 
 def collect_trend_data(domain_dir, timestamps, verbose=False):
@@ -161,19 +157,14 @@ def collect_trend_data(domain_dir, timestamps, verbose=False):
         try:
             dt = datetime.datetime.strptime(timestamp, "%m-%d-%Y_%I-%M%p")
             formatted_date = dt.strftime("%m/%d/%Y")
-        except:
+        except (ValueError, TypeError):
             formatted_date = timestamp
         
         scan_dir = os.path.join(domain_dir, timestamp)
         
         # Check for both CSV and TXT files
         missing_site_file = os.path.join(scan_dir, "missing_from_site.csv")
-        if not os.path.exists(missing_site_file):
-            missing_site_file = os.path.join(scan_dir, "missing_from_site.txt")
-        
         missing_sitemap_file = os.path.join(scan_dir, "missing_from_sitemap.csv")
-        if not os.path.exists(missing_sitemap_file):
-            missing_sitemap_file = os.path.join(scan_dir, "missing_from_sitemap.txt")
         
         # Only add to trend data if at least one of the required files exists
         if os.path.exists(missing_site_file) or os.path.exists(missing_sitemap_file):
@@ -223,7 +214,7 @@ def generate_main_index(reports_dir, domains):
             try:
                 dt = datetime.datetime.strptime(latest_timestamp, "%m-%d-%Y_%I-%M%p")
                 formatted_date = dt.strftime("%B %d, %Y")
-            except:
+            except (ValueError, TypeError):
                 formatted_date = latest_timestamp
             
             f.write(f'<li><a href="{domain}/index.html">{domain}</a> <span style="color: #7f8c8d;">(Latest scan: {formatted_date})</span></li>\n')
@@ -326,7 +317,7 @@ def generate_domain_index(domain, domain_dir, domain_report_dir, timestamps, tre
             try:
                 dt = datetime.datetime.strptime(timestamp, "%m-%d-%Y_%I-%M%p")
                 formatted_date = dt.strftime("%B %d, %Y at %I:%M %p")
-            except:
+            except (ValueError, TypeError):
                 formatted_date = timestamp
             
             # Get the counts for missing URLs
@@ -383,17 +374,12 @@ def generate_scan_report(domain, timestamp, scan_dir, domain_report_dir, verbose
     try:
         dt = datetime.datetime.strptime(timestamp, "%m-%d-%Y_%I-%M%p")
         formatted_date = dt.strftime("%B %d, %Y at %I:%M %p")
-    except:
+    except (ValueError, TypeError):
         formatted_date = timestamp
     
     # Check for both CSV and TXT files
     missing_site_file = os.path.join(scan_dir, "missing_from_site.csv")
-    if not os.path.exists(missing_site_file):
-        missing_site_file = os.path.join(scan_dir, "missing_from_site.txt")
-    
     missing_sitemap_file = os.path.join(scan_dir, "missing_from_sitemap.csv")
-    if not os.path.exists(missing_sitemap_file):
-        missing_sitemap_file = os.path.join(scan_dir, "missing_from_sitemap.txt")
     
     if verbose:
         print(f"      Using files: {missing_site_file} and {missing_sitemap_file}")
@@ -490,7 +476,7 @@ def generate_scan_report(domain, timestamp, scan_dir, domain_report_dir, verbose
                 """)
                 for row in new_missing_site_urls[:10]:  # Show top 10
                     url = row.get("URL", "")
-                    f.write(f'<li><a href="{url}" target="_blank">{url}</a></li>')
+                    f.write(f'<li><a href="{_h(url)}" target="_blank">{_h(url)}</a></li>')
                 if len(new_missing_site_urls) > 10:
                     f.write(f'<li class="more-items">... and {len(new_missing_site_urls) - 10} more</li>')
                 f.write("""
@@ -508,7 +494,7 @@ def generate_scan_report(domain, timestamp, scan_dir, domain_report_dir, verbose
                 """)
                 for row in fixed_missing_site_urls[:10]:  # Show top 10
                     url = row.get("URL", "")
-                    f.write(f'<li><a href="{url}" target="_blank">{url}</a></li>')
+                    f.write(f'<li><a href="{_h(url)}" target="_blank">{_h(url)}</a></li>')
                 if len(fixed_missing_site_urls) > 10:
                     f.write(f'<li class="more-items">... and {len(fixed_missing_site_urls) - 10} more</li>')
                 f.write("""
@@ -526,7 +512,7 @@ def generate_scan_report(domain, timestamp, scan_dir, domain_report_dir, verbose
                 """)
                 for row in new_missing_sitemap_urls[:10]:  # Show top 10
                     url = row.get("URL", "")
-                    f.write(f'<li><a href="{url}" target="_blank">{url}</a></li>')
+                    f.write(f'<li><a href="{_h(url)}" target="_blank">{_h(url)}</a></li>')
                 if len(new_missing_sitemap_urls) > 10:
                     f.write(f'<li class="more-items">... and {len(new_missing_sitemap_urls) - 10} more</li>')
                 f.write("""
@@ -544,7 +530,7 @@ def generate_scan_report(domain, timestamp, scan_dir, domain_report_dir, verbose
                 """)
                 for row in fixed_missing_sitemap_urls[:10]:  # Show top 10
                     url = row.get("URL", "")
-                    f.write(f'<li><a href="{url}" target="_blank">{url}</a></li>')
+                    f.write(f'<li><a href="{_h(url)}" target="_blank">{_h(url)}</a></li>')
                 if len(fixed_missing_sitemap_urls) > 10:
                     f.write(f'<li class="more-items">... and {len(fixed_missing_sitemap_urls) - 10} more</li>')
                 f.write("""
@@ -586,7 +572,7 @@ def generate_scan_report(domain, timestamp, scan_dir, domain_report_dir, verbose
                 f.write(f"""
                         <tr>
                             <td>{source}</td>
-                            <td class="url-cell"><a href="{url}" target="_blank">{url}</a></td>
+                            <td class="url-cell"><a href="{_h(url)}" target="_blank">{_h(url)}</a></td>
                         </tr>
                 """)
             
@@ -628,7 +614,7 @@ def generate_scan_report(domain, timestamp, scan_dir, domain_report_dir, verbose
                 f.write(f"""
                         <tr>
                             <td>{source}</td>
-                            <td class="url-cell"><a href="{url}" target="_blank">{url}</a></td>
+                            <td class="url-cell"><a href="{_h(url)}" target="_blank">{_h(url)}</a></td>
                         </tr>
                 """)
             
@@ -662,7 +648,7 @@ def generate_scan_report(domain, timestamp, scan_dir, domain_report_dir, verbose
                 f.write(f"""
                         <tr>
                             <td class="{status_class}">{status}</td>
-                            <td class="url-cell"><a href="{url}" target="_blank">{url}</a></td>
+                            <td class="url-cell"><a href="{_h(url)}" target="_blank">{_h(url)}</a></td>
                         </tr>
                 """)
             
@@ -692,7 +678,7 @@ def generate_scan_report(domain, timestamp, scan_dir, domain_report_dir, verbose
                 f.write(f"""
                         <tr>
                             <td class="{status_class}">{status}</td>
-                            <td class="url-cell"><a href="{url}" target="_blank">{url}</a></td>
+                            <td class="url-cell"><a href="{_h(url)}" target="_blank">{_h(url)}</a></td>
                         </tr>
                 """)
             
@@ -825,36 +811,20 @@ def generate_scan_report(domain, timestamp, scan_dir, domain_report_dir, verbose
         """)
 
 def count_csv_rows(file_path, verbose=False):
-    """Count the number of data rows in a CSV file or text file."""
+    """Count the number of data rows in a CSV file."""
     if not os.path.exists(file_path):
         if verbose:
             print(f"      File not found: {file_path}")
         return 0
-    
+
     try:
         with open(file_path, 'r', newline='') as f:
-            # Try to read as CSV first
-            try:
-                reader = csv.reader(f)
-                # Skip header
-                next(reader, None)
-                count = sum(1 for _ in reader)
-                if verbose:
-                    print(f"      Counted {count} rows in CSV: {file_path}")
-                return count
-            except Exception:
-                # If CSV reading fails, try as a simple text file with URLs
-                if verbose:
-                    print(f"      Failed to count as CSV, trying as text file: {file_path}")
-                
-                # Reset file pointer to beginning
-                f.seek(0)
-                
-                # Count non-empty, non-comment lines
-                count = sum(1 for line in f if line.strip() and not line.strip().startswith('#'))
-                if verbose:
-                    print(f"      Counted {count} URLs in text file: {file_path}")
-                return count
+            reader = csv.reader(f)
+            next(reader, None)  # skip header
+            count = sum(1 for _ in reader)
+            if verbose:
+                print(f"      Counted {count} rows in CSV: {file_path}")
+            return count
     except Exception as e:
         print(f"Error counting rows in {file_path}: {e}")
         return 0
@@ -881,46 +851,24 @@ def count_comparison_csv(file_path):
     return new_count, fixed_count
 
 def read_csv_data(file_path, verbose=False):
-    """Read a CSV file and return the data as a list of dictionaries."""
+    """Read a CSV file and return the data as a list of dicts."""
     data = []
-    
+
     if not os.path.exists(file_path):
         if verbose:
             print(f"      File not found: {file_path}")
         return data
-    
+
     try:
         with open(file_path, 'r', newline='') as f:
-            # Try to read as CSV first
-            try:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    data.append(row)
-                
-                if verbose:
-                    print(f"      Read {len(data)} rows from CSV: {file_path}")
-                
-                return data
-            except Exception as csv_error:
-                # If CSV reading fails, try as a simple text file with URLs
-                if verbose:
-                    print(f"      Failed to read as CSV, trying as text file: {file_path}")
-                
-                # Reset file pointer to beginning
-                f.seek(0)
-                
-                # Read as text file with one URL per line
-                lines = f.readlines()
-                for line in lines:
-                    url = line.strip()
-                    if url and not url.startswith('#'):  # Skip empty lines and comments
-                        data.append({"URL": url, "Source": "Text file"})
-                
-                if verbose:
-                    print(f"      Read {len(data)} URLs from text file: {file_path}")
+            reader = csv.DictReader(f)
+            for row in reader:
+                data.append(row)
+            if verbose:
+                print(f"      Read {len(data)} rows from CSV: {file_path}")
     except Exception as e:
         print(f"Error reading file {file_path}: {e}")
-    
+
     return data
 
 if __name__ == "__main__":
