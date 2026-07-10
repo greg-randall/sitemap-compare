@@ -8,4 +8,5 @@ crawl_*.log
 *.7z
 *.zip
 *.csv
+*.txt
 __pycache__/
