@@ -74,7 +74,8 @@ The tool does three things in sequence, then optionally compares against history
 ```
 sitemap_comparison.py          # Main engine: crawl, compare, cache
 sitemap_report.py              # HTML report generator (run separately)
-tests/                         # pytest suite (132 tests, 8 modules)
+tests/                         # pytest suite (133 tests, 9 modules)
+tests/fixtures/                # Static HTML site for integration tests
 sites/<domain>/<timestamp>/    # Per-scan output directory
 reports/                       # Generated HTML reports
 ```
@@ -160,7 +161,7 @@ pip install pytest pytest-mock
 python -m pytest tests/ -v
 ```
 
-132 tests across 8 modules. No network access required. All HTTP and subprocess calls are mocked.
+133 tests across 9 modules, including an integration test that runs the full pipeline against a local HTTP server. No network access required — all external calls are mocked or served locally.
 
 ### Extending
 
