@@ -20,6 +20,7 @@ import argparse
 import shutil
 import json
 import html
+from tqdm import tqdm
 
 _h = html.escape  # escape user-supplied text before embedding in HTML
 
@@ -78,52 +79,49 @@ def generate_site_reports(output_dir="reports", open_browser=False, verbose=Fals
         print("Generating main index page...")
     generate_main_index(reports_dir, domains)
     
-    # Process each domain
+    # Count total scans for progress reporting
+    domain_scans = {}
+    total_scans = 0
     for domain in domains:
-        if verbose:
-            print(f"Processing domain: {domain}")
         domain_dir = os.path.join(sites_dir, domain)
-        
-        # Get all scan timestamps for this domain
-        timestamps = []
+        if not os.path.isdir(domain_dir):
+            continue
+        scans = []
         for item in os.listdir(domain_dir):
             scan_dir = os.path.join(domain_dir, item)
             if os.path.isdir(scan_dir):
-                # Check if this scan has the necessary files
-                has_required_files = (
-                    os.path.exists(os.path.join(scan_dir, "missing_from_site.csv")) and
-                    os.path.exists(os.path.join(scan_dir, "missing_from_sitemap.csv"))
-                )
-                if has_required_files:
-                    timestamps.append(item)
-                elif verbose:
-                    print(f"  Skipping incomplete scan: {item} (missing required files)")
-        
-        # Sort timestamps chronologically using datetime objects
-        timestamps.sort(key=timestamp_to_datetime)
-        
+                if (os.path.exists(os.path.join(scan_dir, "missing_from_site.csv")) and
+                        os.path.exists(os.path.join(scan_dir, "missing_from_sitemap.csv"))):
+                    scans.append(item)
+        scans.sort(key=timestamp_to_datetime)
+        if scans:
+            domain_scans[domain] = scans
+            total_scans += len(scans)
+
+    if not domain_scans:
+        print("No complete scans found.")
+        return
+
+    if verbose:
+        print(f"Found {len(domain_scans)} domains, {total_scans} scans")
+    else:
+        print(f"Generating reports for {len(domain_scans)} domains ({total_scans} scans)...")
+
+    # Process each domain with a progress bar
+    for domain, timestamps in tqdm(domain_scans.items(), desc="Domains", unit="domain"):
+        domain_dir = os.path.join(sites_dir, domain)
+
         if verbose:
             print(f"  Found {len(timestamps)} scans for {domain}")
-        
-        if not timestamps:
-            if verbose:
-                print(f"  No scans found for {domain}, skipping")
-            continue
-        
+
         # Collect trend data
-        if verbose:
-            print(f"  Collecting trend data for {domain}...")
         trend_data = collect_trend_data(domain_dir, timestamps, verbose)
-        
+
         # Generate domain index page
         domain_report_dir = os.path.join(reports_dir, domain)
         os.makedirs(domain_report_dir, exist_ok=True)
-        
-        # Generate the domain index page
-        if verbose:
-            print(f"  Generating index page for {domain}...")
         generate_domain_index(domain, domain_dir, domain_report_dir, timestamps, trend_data)
-        
+
         # Process each scan (sorted by datetime, newest first)
         sorted_timestamps = sorted(timestamps, key=lambda ts: timestamp_to_datetime(ts), reverse=True)
         for timestamp in sorted_timestamps:
