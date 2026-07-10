@@ -199,6 +199,7 @@ class Config:
         self.ignore_pagination = args.ignore_pagination
         self.ignore_categories_tags = args.ignore_categories_tags
         self.thread_timeout = args.thread_timeout
+        self.retries = getattr(args, 'retries', 3)
         self.obscura_path = getattr(args, 'obscura_path', 'obscura')
         self.obscura_wait = getattr(args, 'obscura_wait', 1)
         self.obscura_wait_until = getattr(args, 'obscura_wait_until', 'networkidle2')
@@ -813,7 +814,12 @@ class WebsiteSpider:
         # Locks for thread safety
         visited_lock = threading.Lock()
         found_lock = threading.Lock()
-        
+        attempts_lock = threading.Lock()
+
+        # Track retry attempts per URL (url -> attempts used)
+        url_attempts = {}
+        max_retries = self.config.retries
+
         # Counter for progress reporting
         visited_count = 0
         
@@ -1009,8 +1015,22 @@ class WebsiteSpider:
                             url_queue.put((url, current_url))
                             
                     except Exception as e:
-                        if verbose:
-                            logging.error(f"Error visiting {current_url}: {e}")
+                        # Requeue failed URLs if they have retries left
+                        with attempts_lock:
+                            attempts = url_attempts.get(current_url, 0) + 1
+                            url_attempts[current_url] = attempts
+                        if attempts <= max_retries:
+                            if verbose:
+                                logging.warning(
+                                    f"Retrying {current_url} "
+                                    f"(attempt {attempts}/{max_retries}): {e}"
+                                )
+                            url_queue.put((current_url, source_url))
+                        elif verbose:
+                            logging.error(
+                                f"Giving up on {current_url} "
+                                f"after {max_retries} attempts: {e}"
+                            )
                     
                     finally:
                         # Always mark the thread operation as complete
@@ -1573,6 +1593,8 @@ def main():
     parser.add_argument('--ignore-categories-tags', action='store_true', help='Ignore WordPress category and tag URLs in the "missing from sitemap" report')
     parser.add_argument('--thread-timeout', type=int, default=30,
                         help='Maximum time in seconds a thread can spend on a single URL (default: 30)')
+    parser.add_argument('--retries', type=int, default=3,
+                        help='Times to retry failed pages before giving up (default: 3)')
     parser.add_argument('--obscura-path', default='obscura',
                         help='Path to the obscura binary (default: "obscura" from PATH)')
     parser.add_argument('--obscura-wait', type=int, default=1,
