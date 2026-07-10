@@ -42,7 +42,8 @@ class ObscuraResponse:
             raise Exception(f"HTTP status {self.status_code}")
 
 
-def obscura_fetch(url, wait=1, wait_until="networkidle2", timeout=30, stealth=False, obscura_path="obscura"):
+def obscura_fetch(url, wait=1, wait_until="networkidle2", timeout=30, nav_timeout=10,
+                  stealth=False, obscura_path="obscura"):
     """Fetch a URL using the obscura headless browser CLI.
 
     Renders JavaScript and returns the resulting HTML as a response-like object.
@@ -52,7 +53,10 @@ def obscura_fetch(url, wait=1, wait_until="networkidle2", timeout=30, stealth=Fa
         wait: Additional seconds to wait after the page settles (--wait flag).
         wait_until: Page settle condition: load, domcontentloaded, networkidle,
                     networkidle0, or networkidle2 (default: networkidle2).
-        timeout: Subprocess wall-clock timeout in seconds.
+        timeout: Subprocess wall-clock deadline in seconds. Should be larger
+                 than nav_timeout to allow for V8 startup and shutdown.
+        nav_timeout: Maximum seconds obscura spends on page load + waitUntil.
+                     Passed as OBSCURA_NAV_TIMEOUT_MS (default: 10).
         stealth: Enable stealth mode (TLS impersonation + tracker blocking).
         obscura_path: Path to the obscura binary (default: "obscura" from PATH).
 
@@ -64,9 +68,7 @@ def obscura_fetch(url, wait=1, wait_until="networkidle2", timeout=30, stealth=Fa
     """
     cmd = [obscura_path, "fetch", url, "--dump", "html",
            "--wait", str(wait), "--wait-until", wait_until, "-q"]
-    # Match obscura's internal navigation timeout to our subprocess timeout
-    # so a slow page load doesn't outlive the subprocess timeout.
-    nav_timeout_ms = timeout * 1000
+    nav_timeout_ms = nav_timeout * 1000
     env = {**__import__('os').environ, "OBSCURA_NAV_TIMEOUT_MS": str(nav_timeout_ms)}
     if stealth:
         cmd.append("--stealth")
@@ -200,7 +202,15 @@ class Config:
         self.obscura_path = getattr(args, 'obscura_path', 'obscura')
         self.obscura_wait = getattr(args, 'obscura_wait', 1)
         self.obscura_wait_until = getattr(args, 'obscura_wait_until', 'networkidle2')
-        self.obscura_timeout = getattr(args, 'obscura_timeout', None) or self.thread_timeout
+        self.obscura_nav_timeout = getattr(args, 'obscura_nav_timeout', 10)
+        # Subprocess timeout is 150% of nav timeout, minimum +1s headroom.
+        # obscura needs time to start V8 and shut down; the nav timeout only
+        # covers the page-load phase inside the browser.
+        explicit = getattr(args, 'obscura_timeout', None)
+        if explicit is not None:
+            self.obscura_timeout = explicit
+        else:
+            self.obscura_timeout = max(self.obscura_nav_timeout * 1.5, self.obscura_nav_timeout + 1)
         self.obscura_stealth = not getattr(args, 'obscura_stealth_disable', False)
         self.curl_cffi = getattr(args, 'curl_cffi', False)
 
@@ -907,6 +917,7 @@ class WebsiteSpider:
                                         wait=self.config.obscura_wait,
                                         wait_until=self.config.obscura_wait_until,
                                         timeout=self.config.obscura_timeout,
+                                        nav_timeout=self.config.obscura_nav_timeout,
                                         stealth=self.config.obscura_stealth,
                                         obscura_path=self.config.obscura_path
                                     )
@@ -1549,8 +1560,10 @@ def main():
     parser.add_argument('--obscura-wait-until', default='networkidle2',
                         choices=['load', 'domcontentloaded', 'networkidle', 'networkidle0', 'networkidle2'],
                         help='When to consider the page loaded (default: networkidle2)')
+    parser.add_argument('--obscura-nav-timeout', type=int, default=10,
+                        help='Max seconds obscura spends on page load + waitUntil before giving up (default: 10)')
     parser.add_argument('--obscura-timeout', type=int, default=None,
-                        help='Subprocess timeout for each obscura call in seconds (default: same as --thread-timeout)')
+                        help='Subprocess timeout for each obscura call in seconds (default: nav-timeout x 1.5, min +1s)')
     parser.add_argument('--obscura-stealth-disable', action='store_true',
                         help='Disable obscura stealth mode (stealth is ON by default)')
     parser.add_argument('--curl-cffi', action='store_true',

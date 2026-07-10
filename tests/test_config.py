@@ -70,18 +70,20 @@ class TestConfigDefaults:
         config = Config(args)
         assert config.obscura_stealth is False
 
-    def test_obscura_timeout_falls_back_to_thread_timeout(self):
-        """When obscura_timeout is None, it inherits thread_timeout."""
+    def test_obscura_timeout_computed_from_nav_timeout(self):
+        """When obscura_timeout is None, it's computed as nav_timeout x 1.5, min +1s."""
         args = argparse.Namespace(
             start_url="https://www.example.com",
             sitemap_url=None, output_prefix="", workers=4, max_pages=100,
             verbose=False, compare_previous=False, ignore_pagination=False,
-            ignore_categories_tags=False, thread_timeout=42,
+            ignore_categories_tags=False, thread_timeout=30,
             obscura_path="obscura", obscura_wait=1, obscura_wait_until="load",
-            obscura_timeout=None, obscura_stealth_disable=False, curl_cffi=False,
+            obscura_nav_timeout=10, obscura_timeout=None,
+            obscura_stealth_disable=False, curl_cffi=False,
         )
         config = Config(args)
-        assert config.obscura_timeout == 42
+        assert config.obscura_nav_timeout == 10
+        assert config.obscura_timeout == 15  # max(10*1.5, 10+1) = 15
 
     def test_domain_parsing(self):
         """Domain is extracted from start_url."""

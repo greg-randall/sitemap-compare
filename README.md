@@ -140,7 +140,8 @@ python sitemap_comparison.py <start_url> [options]
 | `--obscura-path` | `obscura` | Path to the obscura binary |
 | `--obscura-wait` | 1 | Extra seconds to wait after page load for JS |
 | `--obscura-wait-until` | `networkidle2` | Page settle trigger: `load`, `domcontentloaded`, `networkidle`, `networkidle0`, `networkidle2` |
-| `--obscura-timeout` | = thread-timeout | Subprocess timeout per obscura call |
+| `--obscura-nav-timeout` | 10 | Max seconds obscura spends on page load + waitUntil |
+| `--obscura-timeout` | nav×1.5, min +1s headroom | Subprocess envelope: always longer than nav timeout to cover V8 startup/shutdown |
 | `--obscura-stealth-disable` | off | Disable stealth mode (stealth is on by default) |
 | `--curl-cffi` | off | Use curl_cffi for all fetching (no JS rendering) |
 
